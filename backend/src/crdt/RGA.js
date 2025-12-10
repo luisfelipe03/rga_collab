@@ -1,0 +1,224 @@
+import { randomUUID } from 'crypto';
+
+/**
+ * RGA (Replicated Growable Array) CRDT Implementation
+ * Used for collaborative text editing
+ */
+class RGA {
+  constructor(replicaId) {
+    this.replicaId = replicaId; // Unique identifier for this replica
+    this.vertices = new Map(); // Map of vertex ID to vertex object
+    this.head = null; // Points to the first vertex
+    this.timestamp = 0; // Logical clock
+  }
+
+  /**
+   * Insert a character at a specific position
+   */
+  insert(value, afterVertexId = null) {
+    this.timestamp++;
+
+    const vertexId = `${this.replicaId}:${this.timestamp}`;
+    const vertex = {
+      id: vertexId,
+      value: value,
+      timestamp: this.timestamp,
+      replicaId: this.replicaId,
+      afterId: afterVertexId,
+      isTombstone: false,
+      next: null,
+    };
+
+    this.vertices.set(vertexId, vertex);
+
+    // Insert at head if no afterVertexId
+    if (!afterVertexId) {
+      if (this.head) {
+        vertex.next = this.head;
+      }
+      this.head = vertexId;
+    } else {
+      // Find the vertex to insert after
+      const afterVertex = this.vertices.get(afterVertexId);
+      if (afterVertex) {
+        vertex.next = afterVertex.next;
+        afterVertex.next = vertexId;
+      }
+    }
+
+    return {
+      type: 'insert',
+      vertexId,
+      value,
+      afterId: afterVertexId,
+      timestamp: this.timestamp,
+      replicaId: this.replicaId,
+    };
+  }
+
+  /**
+   * Delete a character (tombstone approach)
+   */
+  delete(vertexId) {
+    const vertex = this.vertices.get(vertexId);
+    if (vertex && !vertex.isTombstone) {
+      vertex.isTombstone = true;
+      this.timestamp++;
+
+      return {
+        type: 'delete',
+        vertexId,
+        timestamp: this.timestamp,
+        replicaId: this.replicaId,
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Apply remote operation
+   */
+  applyOperation(operation) {
+    if (operation.type === 'insert') {
+      // Check if vertex already exists
+      if (this.vertices.has(operation.vertexId)) {
+        return;
+      }
+
+      const vertex = {
+        id: operation.vertexId,
+        value: operation.value,
+        timestamp: operation.timestamp,
+        replicaId: operation.replicaId,
+        afterId: operation.afterId,
+        isTombstone: false,
+        next: null,
+      };
+
+      this.vertices.set(operation.vertexId, vertex);
+
+      // Insert in the correct position
+      if (!operation.afterId) {
+        if (this.head) {
+          vertex.next = this.head;
+        }
+        this.head = operation.vertexId;
+      } else {
+        const afterVertex = this.vertices.get(operation.afterId);
+        if (afterVertex) {
+          vertex.next = afterVertex.next;
+          afterVertex.next = operation.vertexId;
+        }
+      }
+    } else if (operation.type === 'delete') {
+      const vertex = this.vertices.get(operation.vertexId);
+      if (vertex) {
+        vertex.isTombstone = true;
+      }
+    }
+  }
+
+  /**
+   * Get the current text content
+   */
+  getText() {
+    const chars = [];
+    let currentId = this.head;
+
+    while (currentId) {
+      const vertex = this.vertices.get(currentId);
+      if (vertex && !vertex.isTombstone) {
+        chars.push(vertex.value);
+      }
+      currentId = vertex ? vertex.next : null;
+    }
+
+    return chars.join('');
+  }
+
+  /**
+   * Get vertex at position (for editing operations)
+   */
+  getVertexAtPosition(position) {
+    let currentPos = 0;
+    let currentId = this.head;
+
+    while (currentId) {
+      const vertex = this.vertices.get(currentId);
+      if (vertex && !vertex.isTombstone) {
+        if (currentPos === position) {
+          return vertex.id;
+        }
+        currentPos++;
+      }
+      currentId = vertex ? vertex.next : null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get the state for synchronization
+   */
+  getState() {
+    return {
+      replicaId: this.replicaId,
+      vertices: Array.from(this.vertices.values()),
+      head: this.head,
+      timestamp: this.timestamp,
+    };
+  }
+
+  /**
+   * Merge state from another replica
+   */
+  mergeState(state) {
+    state.vertices.forEach((vertex) => {
+      if (!this.vertices.has(vertex.id)) {
+        this.vertices.set(vertex.id, { ...vertex });
+      }
+    });
+
+    // Rebuild the linked list structure
+    this.rebuildStructure();
+
+    // Update timestamp
+    this.timestamp = Math.max(this.timestamp, state.timestamp);
+  }
+
+  /**
+   * Rebuild the linked list structure after merging
+   */
+  rebuildStructure() {
+    // Clear next pointers
+    this.vertices.forEach((vertex) => {
+      vertex.next = null;
+    });
+
+    // Sort vertices by timestamp and replicaId for deterministic ordering
+    const sortedVertices = Array.from(this.vertices.values()).sort((a, b) => {
+      if (a.timestamp !== b.timestamp) {
+        return a.timestamp - b.timestamp;
+      }
+      return a.replicaId.localeCompare(b.replicaId);
+    });
+
+    // Rebuild based on afterId relationships
+    sortedVertices.forEach((vertex) => {
+      if (!vertex.afterId) {
+        if (this.head) {
+          vertex.next = this.head;
+        }
+        this.head = vertex.id;
+      } else {
+        const afterVertex = this.vertices.get(vertex.afterId);
+        if (afterVertex) {
+          vertex.next = afterVertex.next;
+          afterVertex.next = vertex.id;
+        }
+      }
+    });
+  }
+}
+
+export default RGA;

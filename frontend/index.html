@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RGA Collaborative Editor</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen" class="screen">
+    <div class="login-container">
+      <h1>🤝 Editor Colaborativo</h1>
+      <p>Entre com seu nome para começar</p>
+      <input type="text" id="username-input" placeholder="Seu nome" autofocus>
+      <button id="login-btn">Entrar</button>
+    </div>
+  </div>
+
+  <!-- Dashboard Screen -->
+  <div id="dashboard-screen" class="screen hidden">
+    <div class="dashboard-container">
+      <header>
+        <h1>📝 Meus Documentos</h1>
+        <div class="user-info">
+          <span id="current-username"></span>
+          <button id="logout-btn">Sair</button>
+        </div>
+      </header>
+
+      <div class="actions">
+        <button id="create-doc-btn" class="primary-btn">+ Novo Documento</button>
+        <button id="refresh-docs-btn">🔄 Atualizar</button>
+      </div>
+
+      <div id="documents-list" class="documents-grid">
+        <!-- Documents will be listed here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Editor Screen -->
+  <div id="editor-screen" class="screen hidden">
+    <div class="editor-container">
+      <header class="editor-header">
+        <button id="back-btn">← Voltar</button>
+        <h2 id="document-title">Documento</h2>
+        <div class="collaborators">
+          <span class="collaborators-label">Colaboradores:</span>
+          <div id="collaborators-list"></div>
+        </div>
+      </header>
+
+      <div class="editor-wrapper">
+        <textarea id="editor" placeholder="Comece a digitar..."></textarea>
+      </div>
+
+      <div class="status-bar">
+        <span id="connection-status">🟢 Conectado</span>
+        <span id="document-id"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Document Modal -->
+  <div id="create-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Criar Novo Documento</h3>
+      <input type="text" id="doc-title-input" placeholder="Título do documento">
+      <div class="modal-actions">
+        <button id="cancel-create-btn">Cancelar</button>
+        <button id="confirm-create-btn" class="primary-btn">Criar</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+
+</html>
