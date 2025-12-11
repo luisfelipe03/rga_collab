@@ -52,24 +52,37 @@ class DocumentService {
   async getDocument(documentId, userId, username) {
     // Check if already loaded in memory
     let rga = this.activeDocuments.get(documentId);
+    let document;
 
     if (!rga) {
       // Load from database
-      const document = await Document.findOne({ documentId });
+      document = await Document.findOne({ documentId });
 
       if (!document) {
         throw new Error('Document not found');
       }
 
       // Recreate RGA from state
-      rga = new RGA(document.rgaState.replicaId);
-      if (document.rgaState.vertices) {
-        rga.mergeState(document.rgaState);
+      const replicaId = document.rgaState?.replicaId || `server-${documentId}`;
+      rga = new RGA(replicaId);
+
+      // Load complete state from database
+      if (
+        document.rgaState &&
+        document.rgaState.vertices &&
+        document.rgaState.vertices.length > 0
+      ) {
+        rga.loadState(document.rgaState);
       }
 
       this.activeDocuments.set(documentId, rga);
+    } else {
+      // Document already in memory, get from DB for collaborator info
+      document = await Document.findOne({ documentId });
+    }
 
-      // Add user as collaborator if not already
+    // Add user as collaborator if not already
+    if (document) {
       const isCollaborator = document.collaborators.some(
         (c) => c.userId === userId
       );
@@ -83,9 +96,15 @@ class DocumentService {
       }
     }
 
+    const content = rga.getText();
+    console.log(
+      `Document loaded: ${documentId}, content length: ${content.length}`
+    );
+
     return {
       documentId,
-      content: rga.getText(),
+      title: document?.title || 'Untitled Document',
+      content: content,
       rgaState: rga.getState(),
     };
   }
@@ -100,21 +119,49 @@ class DocumentService {
       throw new Error('Document not loaded');
     }
 
-    // Apply operation to RGA
-    rga.applyOperation(operation);
+    let rgaOperation;
+
+    // Convert position-based operation to RGA operation
+    if (operation.type === 'insert' && operation.position !== undefined) {
+      rgaOperation = rga.insertAtPosition(
+        operation.value,
+        operation.position,
+        operation.replicaId
+      );
+    } else if (
+      operation.type === 'delete' &&
+      operation.position !== undefined
+    ) {
+      rgaOperation = rga.deleteAtPosition(
+        operation.position,
+        operation.replicaId
+      );
+    } else {
+      // Already an RGA operation with vertexId
+      rga.applyOperation(operation);
+      rgaOperation = operation;
+    }
+
+    if (!rgaOperation) {
+      return { content: rga.getText(), operation: null };
+    }
 
     // Save operation to database
     await Document.findOneAndUpdate(
       { documentId },
       {
-        $push: { operations: operation },
+        $push: { operations: rgaOperation },
         rgaState: rga.getState(),
       }
     );
 
+    console.log(
+      `RGA operation applied: ${rgaOperation.type}, content: "${rga.getText()}"`
+    );
+
     return {
       content: rga.getText(),
-      operation,
+      operation: rgaOperation,
     };
   }
 

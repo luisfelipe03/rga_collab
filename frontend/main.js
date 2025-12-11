@@ -69,6 +69,10 @@ socket.on('document-loaded', (doc) => {
   documentTitle.textContent = doc.title || 'Documento';
   documentIdEl.textContent = `ID: ${doc.documentId}`;
   editor.value = doc.content || '';
+  lastContent = editor.value; // Sync lastContent with loaded content
+  console.log(
+    `Document loaded with content length: ${doc.content?.length || 0}`
+  );
   showEditor();
 });
 

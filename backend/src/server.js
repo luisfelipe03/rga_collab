@@ -144,21 +144,26 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Apply operation
+      // Apply operation and get the RGA operation
       const result = await DocumentService.applyOperation(
         documentId,
         operation
       );
 
-      // Broadcast to all users in the document room except sender
-      socket.to(documentId).emit('operation', {
-        operation,
-        userId: user.id,
-        username: user.username,
-      });
+      if (result.operation) {
+        // Broadcast the RGA operation to all users in the document room except sender
+        socket.to(documentId).emit('operation', {
+          operation: result.operation,
+          userId: user.id,
+          username: user.username,
+        });
 
-      console.log(`Operation applied by ${user.username} in ${documentId}`);
+        console.log(
+          `Operation applied by ${user.username} in ${documentId}: ${result.operation.type}`
+        );
+      }
     } catch (error) {
+      console.error('Operation error:', error);
       socket.emit('error', { message: error.message });
     }
   });

@@ -158,6 +158,108 @@ class RGA {
   }
 
   /**
+   * Get vertex ID before a position (for inserting after)
+   * Returns null if inserting at position 0 (head)
+   */
+  getVertexBeforePosition(position) {
+    if (position === 0) {
+      return null;
+    }
+
+    let currentPos = 0;
+    let currentId = this.head;
+    let lastVisibleId = null;
+
+    while (currentId) {
+      const vertex = this.vertices.get(currentId);
+      if (vertex && !vertex.isTombstone) {
+        if (currentPos === position - 1) {
+          return vertex.id;
+        }
+        lastVisibleId = vertex.id;
+        currentPos++;
+      }
+      currentId = vertex ? vertex.next : null;
+    }
+
+    // If position is at the end, return last visible vertex
+    return lastVisibleId;
+  }
+
+  /**
+   * Insert at a specific text position
+   */
+  insertAtPosition(value, position, replicaId) {
+    this.timestamp++;
+
+    const afterVertexId = this.getVertexBeforePosition(position);
+    const vertexId = `${replicaId}:${Date.now()}:${this.timestamp}`;
+
+    const vertex = {
+      id: vertexId,
+      value: value,
+      timestamp: this.timestamp,
+      replicaId: replicaId,
+      afterId: afterVertexId,
+      isTombstone: false,
+      next: null,
+    };
+
+    this.vertices.set(vertexId, vertex);
+
+    // Insert at head if no afterVertexId
+    if (!afterVertexId) {
+      if (this.head) {
+        vertex.next = this.head;
+      }
+      this.head = vertexId;
+    } else {
+      // Find the vertex to insert after
+      const afterVertex = this.vertices.get(afterVertexId);
+      if (afterVertex) {
+        vertex.next = afterVertex.next;
+        afterVertex.next = vertexId;
+      }
+    }
+
+    return {
+      type: 'insert',
+      vertexId,
+      value,
+      afterId: afterVertexId,
+      position,
+      timestamp: this.timestamp,
+      replicaId: replicaId,
+    };
+  }
+
+  /**
+   * Delete at a specific text position
+   */
+  deleteAtPosition(position, replicaId) {
+    const vertexId = this.getVertexAtPosition(position);
+
+    if (!vertexId) {
+      return null;
+    }
+
+    const vertex = this.vertices.get(vertexId);
+    if (vertex && !vertex.isTombstone) {
+      vertex.isTombstone = true;
+      this.timestamp++;
+
+      return {
+        type: 'delete',
+        vertexId,
+        position,
+        timestamp: this.timestamp,
+        replicaId: replicaId,
+      };
+    }
+    return null;
+  }
+
+  /**
    * Get the state for synchronization
    */
   getState() {
@@ -167,6 +269,23 @@ class RGA {
       head: this.head,
       timestamp: this.timestamp,
     };
+  }
+
+  /**
+   * Load state from database (complete state restoration)
+   */
+  loadState(state) {
+    // Clear current state
+    this.vertices.clear();
+    this.head = state.head;
+    this.timestamp = state.timestamp || 0;
+
+    // Restore all vertices
+    if (state.vertices && Array.isArray(state.vertices)) {
+      state.vertices.forEach((vertex) => {
+        this.vertices.set(vertex.id, { ...vertex });
+      });
+    }
   }
 
   /**
