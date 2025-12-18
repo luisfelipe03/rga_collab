@@ -17,10 +17,7 @@ const LoginScreen = () => {
     <div className="login-screen">
       <div className="login-container">
         <div className="login-header">
-          <h1>RGA Collaborative Editor</h1>
-          <p className="login-subtitle">
-            Real-time collaborative text editing with CRDT technology
-          </p>
+          <h1>RGA collab</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
@@ -41,10 +38,6 @@ const LoginScreen = () => {
             Enter
           </button>
         </form>
-
-        <div className="login-footer">
-          <p>Delta-CRDT Implementation for Academic Research</p>
-        </div>
       </div>
     </div>
   );
