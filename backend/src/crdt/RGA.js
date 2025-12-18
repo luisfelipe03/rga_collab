@@ -10,6 +10,8 @@ class RGA {
     this.vertices = new Map(); // Map of vertex ID to vertex object
     this.head = null; // Points to the first vertex
     this.timestamp = 0; // Logical clock
+    this.delta = new Map(); // Delta state for Delta-CRDT
+    this.causalContext = new Set(); // Causal context for delta operations
   }
 
   /**
@@ -337,6 +339,77 @@ class RGA {
         }
       }
     });
+  }
+
+  /**
+   * Delta-CRDT: Get delta state (only new changes since last sync)
+   */
+  getDelta() {
+    const deltaVertices = Array.from(this.delta.values());
+    const deltaState = {
+      replicaId: this.replicaId,
+      vertices: deltaVertices,
+      timestamp: this.timestamp,
+      causalContext: Array.from(this.causalContext),
+    };
+
+    // Clear delta after getting it
+    this.delta.clear();
+
+    return deltaState;
+  }
+
+  /**
+   * Delta-CRDT: Apply delta state from another replica
+   */
+  applyDelta(delta) {
+    if (!delta || !delta.vertices) return;
+
+    delta.vertices.forEach((vertex) => {
+      if (!this.vertices.has(vertex.id)) {
+        this.vertices.set(vertex.id, { ...vertex });
+
+        // Update causal context
+        this.causalContext.add(vertex.id);
+      }
+    });
+
+    // Rebuild structure if needed
+    if (delta.vertices.length > 0) {
+      this.rebuildStructure();
+    }
+
+    // Update timestamp
+    this.timestamp = Math.max(this.timestamp, delta.timestamp || 0);
+  }
+
+  /**
+   * Add operation to delta for Delta-CRDT propagation
+   */
+  addToDelta(vertex) {
+    this.delta.set(vertex.id, vertex);
+    this.causalContext.add(vertex.id);
+  }
+
+  /**
+   * Get metrics about the RGA structure
+   */
+  getMetrics() {
+    const totalNodes = this.vertices.size;
+    const activeNodes = Array.from(this.vertices.values()).filter(
+      (v) => !v.isTombstone
+    ).length;
+    const tombstoneNodes = totalNodes - activeNodes;
+    const textLength = this.getText().length;
+
+    return {
+      totalNodes,
+      activeNodes,
+      tombstoneNodes,
+      textLength,
+      compressionRatio:
+        totalNodes > 0 ? ((textLength / totalNodes) * 100).toFixed(2) : 0,
+    };
   }
 }
 

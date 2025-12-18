@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { randomUUID } from 'crypto';
 import connectDB from './config/database.js';
 import DocumentService from './services/DocumentService.js';
+import MetricsService from './services/MetricsService.js';
 
 dotenv.config();
 
@@ -26,6 +27,21 @@ app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send('Server is running');
+});
+
+// Metrics endpoints
+app.get('/api/metrics', (req, res) => {
+  const allMetrics = MetricsService.getAllMetrics();
+  res.json(allMetrics);
+});
+
+app.get('/api/metrics/:documentId', (req, res) => {
+  const { documentId } = req.params;
+  const metrics = DocumentService.getDocumentMetrics(documentId);
+  if (!metrics) {
+    return res.status(404).json({ error: 'Document not found or not loaded' });
+  }
+  res.json(metrics);
 });
 
 // Store connected users and their current documents
@@ -151,15 +167,20 @@ io.on('connection', (socket) => {
       );
 
       if (result.operation) {
-        // Broadcast the RGA operation to all users in the document room except sender
+        // Broadcast the RGA operation and delta to all users in the document room except sender
         socket.to(documentId).emit('operation', {
           operation: result.operation,
+          delta: result.delta,
           userId: user.id,
           username: user.username,
         });
 
+        // Send metrics update to all users in the room
+        const metrics = DocumentService.getDocumentMetrics(documentId);
+        io.to(documentId).emit('metrics-update', metrics);
+
         console.log(
-          `Operation applied by ${user.username} in ${documentId}: ${result.operation.type}`
+          `Operation applied by ${user.username} in ${documentId}: ${result.operation.type}, latency: ${result.latency}ms`
         );
       }
     } catch (error) {

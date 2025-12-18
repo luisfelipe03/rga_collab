@@ -1,6 +1,7 @@
 import Document from '../models/Document.js';
 import RGA from '../crdt/RGA.js';
 import { randomUUID } from 'crypto';
+import MetricsService from './MetricsService.js';
 
 class DocumentService {
   constructor() {
@@ -113,6 +114,8 @@ class DocumentService {
    * Apply an operation to a document
    */
   async applyOperation(documentId, operation) {
+    const startTime = Date.now();
+
     const rga = this.activeDocuments.get(documentId);
 
     if (!rga) {
@@ -146,6 +149,30 @@ class DocumentService {
       return { content: rga.getText(), operation: null };
     }
 
+    // Calculate latency
+    const latency = Date.now() - startTime;
+
+    // Get delta size for metrics
+    const delta = rga.getDelta();
+    const deltaSize = JSON.stringify(delta).length;
+
+    // Record metrics
+    MetricsService.recordOperation(
+      documentId,
+      rgaOperation.type,
+      latency,
+      deltaSize
+    );
+
+    // Update character and node counts
+    const rgaMetrics = rga.getMetrics();
+    MetricsService.updateCharacterCount(documentId, rgaMetrics.textLength);
+    MetricsService.updateNodeCount(documentId, rgaMetrics.totalNodes);
+
+    console.log(
+      `📊 Operation metrics - Type: ${rgaOperation.type}, Latency: ${latency}ms, Delta: ${deltaSize} bytes`
+    );
+
     // Save operation to database
     await Document.findOneAndUpdate(
       { documentId },
@@ -162,6 +189,8 @@ class DocumentService {
     return {
       content: rga.getText(),
       operation: rgaOperation,
+      latency,
+      delta,
     };
   }
 
@@ -186,6 +215,24 @@ class DocumentService {
    */
   getRGA(documentId) {
     return this.activeDocuments.get(documentId);
+  }
+
+  /**
+   * Get metrics for a document
+   */
+  getDocumentMetrics(documentId) {
+    const rga = this.activeDocuments.get(documentId);
+    if (!rga) {
+      return null;
+    }
+
+    const rgaMetrics = rga.getMetrics();
+    const serviceMetrics = MetricsService.getDocumentMetrics(documentId);
+
+    return {
+      ...rgaMetrics,
+      ...serviceMetrics,
+    };
   }
 
   /**

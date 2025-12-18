@@ -100,6 +100,10 @@ socket.on('error', ({ message }) => {
   alert(`Erro: ${message}`);
 });
 
+socket.on('metrics-update', (metrics) => {
+  updateMetricsDisplay(metrics);
+});
+
 // UI Functions
 function showLogin() {
   loginScreen.classList.remove('hidden');
@@ -340,6 +344,40 @@ backBtn.addEventListener('click', () => {
   showDashboard();
   loadDocuments();
 });
+
+// Metrics display function
+function updateMetricsDisplay(metrics) {
+  if (!metrics) return;
+
+  document.getElementById('metric-chars').textContent =
+    metrics.textLength || metrics.characterCount || 0;
+  document.getElementById('metric-nodes').textContent = metrics.totalNodes || 0;
+  document.getElementById('metric-active-nodes').textContent =
+    metrics.activeNodes || 0;
+  document.getElementById('metric-tombstones').textContent =
+    metrics.tombstoneNodes || 0;
+
+  document.getElementById('metric-operations').textContent =
+    metrics.operationCount || 0;
+  document.getElementById('metric-inserts').textContent =
+    metrics.insertOperations || 0;
+  document.getElementById('metric-deletes').textContent =
+    metrics.deleteOperations || 0;
+
+  document.getElementById('metric-latency').textContent = `${
+    metrics.averageLatency || 0
+  } ms`;
+  document.getElementById('metric-delta').textContent = `${
+    metrics.averageDeltaSize || 0
+  } B`;
+
+  if (metrics.networkStats) {
+    document.getElementById('metric-rx').textContent =
+      metrics.networkStats.rx_rate_mbps || '0.00';
+    document.getElementById('metric-tx').textContent =
+      metrics.networkStats.tx_rate_mbps || '0.00';
+  }
+}
 
 // Initialize
 lastContent = editor.value;

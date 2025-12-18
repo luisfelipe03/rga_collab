@@ -53,8 +53,77 @@
         </div>
       </header>
 
-      <div class="editor-wrapper">
-        <textarea id="editor" placeholder="Comece a digitar..."></textarea>
+      <div class="editor-main">
+        <div class="editor-wrapper">
+          <div class="editor-container-inner">
+            <textarea id="editor" placeholder="Comece a digitar..."></textarea>
+            <div id="cursors-container"></div>
+          </div>
+        </div>
+
+        <div class="metrics-panel">
+          <h3>📊 Métricas</h3>
+
+          <div class="metric-group">
+            <h4>Documento</h4>
+            <div class="metric-item">
+              <span class="metric-label">Caracteres:</span>
+              <span id="metric-chars" class="metric-value">0</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Nós RGA:</span>
+              <span id="metric-nodes" class="metric-value">0</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Nós Ativos:</span>
+              <span id="metric-active-nodes" class="metric-value">0</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Tombstones:</span>
+              <span id="metric-tombstones" class="metric-value">0</span>
+            </div>
+          </div>
+
+          <div class="metric-group">
+            <h4>Operações</h4>
+            <div class="metric-item">
+              <span class="metric-label">Total:</span>
+              <span id="metric-operations" class="metric-value">0</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Inserções:</span>
+              <span id="metric-inserts" class="metric-value">0</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Deleções:</span>
+              <span id="metric-deletes" class="metric-value">0</span>
+            </div>
+          </div>
+
+          <div class="metric-group">
+            <h4>Performance</h4>
+            <div class="metric-item">
+              <span class="metric-label">Latência Média:</span>
+              <span id="metric-latency" class="metric-value">0 ms</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">Delta Médio:</span>
+              <span id="metric-delta" class="metric-value">0 B</span>
+            </div>
+          </div>
+
+          <div class="metric-group">
+            <h4>Rede (Mbps)</h4>
+            <div class="metric-item">
+              <span class="metric-label">RX:</span>
+              <span id="metric-rx" class="metric-value">0.00</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">TX:</span>
+              <span id="metric-tx" class="metric-value">0.00</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="status-bar">
