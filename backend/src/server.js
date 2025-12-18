@@ -158,6 +158,9 @@ io.on('connection', (socket) => {
 
       // Send complete room users list to ALL users in the room
       io.to(documentId).emit('room-users', roomUsers);
+
+      // Notify all clients to update active collaborators count
+      io.emit('collaborators-changed');
     } catch (error) {
       socket.emit('error', { message: error.message });
     }
@@ -236,6 +239,9 @@ io.on('connection', (socket) => {
 
       // Send updated user list to remaining users
       io.to(documentId).emit('room-users', roomUsers);
+
+      // Notify all clients to update active collaborators count
+      io.emit('collaborators-changed');
     }
   });
 
@@ -332,6 +338,9 @@ io.on('connection', (socket) => {
 
         // Send updated user list to remaining users
         io.to(user.currentDocument).emit('room-users', roomUsers);
+
+        // Notify all clients to update active collaborators count
+        io.emit('collaborators-changed');
       }
 
       // Remove user from users map

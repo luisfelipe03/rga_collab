@@ -66,6 +66,11 @@ export const AppProvider = ({ children }) => {
       socket.emit('list-documents');
     });
 
+    socket.on('collaborators-changed', () => {
+      // Update document list when collaborators count changes
+      socket.emit('list-documents');
+    });
+
     socket.on('document-deleted', ({ message }) => {
       alert(message);
       socket.emit('list-documents');
@@ -89,6 +94,7 @@ export const AppProvider = ({ children }) => {
       socket.off('room-users');
       socket.off('metrics-update');
       socket.off('documents-updated');
+      socket.off('collaborators-changed');
       socket.off('document-deleted');
       socket.off('document-restored');
       socket.off('error');
