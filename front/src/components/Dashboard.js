@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useSocket } from '../context/SocketContext';
+import About from './About';
 import '../styles/Dashboard.css';
 
 const Dashboard = () => {
@@ -15,6 +16,7 @@ const Dashboard = () => {
   const { connected } = useSocket();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDocTitle, setNewDocTitle] = useState('');
+  const [showAbout, setShowAbout] = useState(false);
 
   useEffect(() => {
     loadDocuments();
@@ -48,27 +50,30 @@ const Dashboard = () => {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-left">
-          <h1>Documents</h1>
+          <h1>Documentos</h1>
           <div className="connection-status">
             <span
               className={`status-indicator ${
                 connected ? 'connected' : 'disconnected'
               }`}
             />
-            {connected ? 'Connected' : 'Disconnected'}
+            {connected ? 'Conectado' : 'Desconectado'}
           </div>
         </div>
 
         <div className="header-right">
           <span className="username">{currentUser?.username}</span>
+          <button onClick={() => setShowAbout(true)} className="btn-secondary">
+            Sobre
+          </button>
           <button
             onClick={() => setShowCreateModal(true)}
             className="btn-primary"
           >
-            New Document
+            Novo Documento
           </button>
           <button onClick={logout} className="btn-secondary">
-            Logout
+            Sair
           </button>
         </div>
       </header>
@@ -77,9 +82,9 @@ const Dashboard = () => {
         <div className="documents-grid">
           {documents.length === 0 ? (
             <div className="empty-state">
-              <p>No documents yet</p>
+              <p>Nenhum documento ainda</p>
               <p className="empty-state-subtitle">
-                Create your first document to get started
+                Crie seu primeiro documento para começar
               </p>
             </div>
           ) : (
@@ -87,14 +92,14 @@ const Dashboard = () => {
               <div key={doc.documentId} className="document-card">
                 <h3>{doc.title}</h3>
                 <div className="document-meta">
-                  <span>Created: {formatDate(doc.createdAt)}</span>
-                  <span>Collaborators: {doc.collaborators?.length || 0}</span>
+                  <span>Criado em: {formatDate(doc.createdAt)}</span>
+                  <span>Colaboradores: {doc.activeCollaborators || 0}</span>
                 </div>
                 <button
                   onClick={() => handleJoinDocument(doc.documentId)}
                   className="btn-open"
                 >
-                  Open
+                  Abrir
                 </button>
               </div>
             ))
@@ -108,16 +113,16 @@ const Dashboard = () => {
           onClick={() => setShowCreateModal(false)}
         >
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>Create New Document</h2>
+            <h2>Criar Novo Documento</h2>
             <form onSubmit={handleCreateDocument}>
               <div className="form-group">
-                <label htmlFor="doc-title">Document Title</label>
+                <label htmlFor="doc-title">Título do Documento</label>
                 <input
                   id="doc-title"
                   type="text"
                   value={newDocTitle}
                   onChange={(e) => setNewDocTitle(e.target.value)}
-                  placeholder="Enter document title"
+                  placeholder="Digite o título do documento"
                   autoFocus
                   required
                 />
@@ -128,16 +133,18 @@ const Dashboard = () => {
                   onClick={() => setShowCreateModal(false)}
                   className="btn-secondary"
                 >
-                  Cancel
+                  Cancelar
                 </button>
                 <button type="submit" className="btn-primary">
-                  Create
+                  Criar
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {showAbout && <About onClose={() => setShowAbout(false)} />}
     </div>
   );
 };

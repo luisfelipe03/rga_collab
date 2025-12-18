@@ -89,7 +89,17 @@ io.on('connection', (socket) => {
   socket.on('list-documents', async () => {
     try {
       const documents = await DocumentService.listDocuments();
-      socket.emit('documents-list', documents);
+
+      // Add active collaborators count for each document
+      const documentsWithActiveCount = documents.map((doc) => {
+        const activeCount = documentRooms.get(doc.documentId)?.size || 0;
+        return {
+          ...doc.toObject(),
+          activeCollaborators: activeCount,
+        };
+      });
+
+      socket.emit('documents-list', documentsWithActiveCount);
     } catch (error) {
       socket.emit('error', { message: error.message });
     }

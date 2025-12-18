@@ -34,10 +34,10 @@ const UsersPanel = ({ collaborators, currentUser }) => {
 
   return (
     <aside className="users-panel">
-      <h3>Active Users</h3>
+      <h3>Usuários Ativos</h3>
       <div className="users-list">
         {allUsers.length === 0 ? (
-          <div className="no-users">No users in document</div>
+          <div className="no-users">Nenhum usuário no documento</div>
         ) : (
           allUsers.map((user) => {
             const isCurrentUser = currentUser && user.userId === currentUser.id;
@@ -52,7 +52,7 @@ const UsersPanel = ({ collaborators, currentUser }) => {
                 <div className="user-info">
                   <span className="user-name">
                     {user.username}
-                    {isCurrentUser && <span className="you-badge">(you)</span>}
+                    {isCurrentUser && <span className="you-badge">(você)</span>}
                   </span>
                   <span className="user-status">Online</span>
                 </div>

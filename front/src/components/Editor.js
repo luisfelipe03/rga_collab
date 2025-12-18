@@ -200,14 +200,14 @@ const Editor = () => {
       <header className="editor-header">
         <div className="header-left">
           <button onClick={leaveDocument} className="btn-back">
-            ← Back
+            ← Voltar
           </button>
           <div className="document-info">
-            <h2>{currentDocument?.title || 'Document'}</h2>
+            <h2>{currentDocument?.title || 'Documento'}</h2>
             <span
               className="document-id"
               onClick={handleCopyDocumentId}
-              title="Click to copy"
+              title="Clique para copiar"
             >
               ID: {currentDocument?.documentId?.slice(0, 8)}...
             </span>
@@ -228,7 +228,7 @@ const Editor = () => {
               onSelect={handleSelectionChange}
               onClick={handleSelectionChange}
               onKeyUp={handleSelectionChange}
-              placeholder="Start typing..."
+              placeholder="Comece a digitar..."
               spellCheck="false"
             />
             <RemoteCursors
