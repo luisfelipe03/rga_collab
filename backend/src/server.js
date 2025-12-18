@@ -239,6 +239,72 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Delete document (soft delete)
+  socket.on('delete-document', async ({ documentId, userId }) => {
+    try {
+      const user = users.get(socket.id);
+      if (!user) {
+        socket.emit('error', { message: 'User not registered' });
+        return;
+      }
+
+      // Check if anyone is editing
+      const activeCount = documentRooms.get(documentId)?.size || 0;
+      if (activeCount > 0) {
+        socket.emit('error', {
+          message: 'Cannot delete document while users are editing',
+        });
+        return;
+      }
+
+      const result = await DocumentService.deleteDocument(documentId, userId);
+      socket.emit('document-deleted', result);
+
+      // Notify all clients to refresh document list
+      io.emit('documents-updated');
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
+  // List trash
+  socket.on('list-trash', async () => {
+    try {
+      const documents = await DocumentService.listDeletedDocuments();
+      socket.emit('trash-list', documents);
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
+  // Restore document
+  socket.on('restore-document', async ({ documentId }) => {
+    try {
+      const result = await DocumentService.restoreDocument(documentId);
+      socket.emit('document-restored', result);
+
+      // Notify all clients to refresh document list
+      io.emit('documents-updated');
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
+  // Permanently delete document
+  socket.on('permanently-delete-document', async ({ documentId }) => {
+    try {
+      const result = await DocumentService.permanentlyDeleteDocument(
+        documentId
+      );
+      socket.emit('document-permanently-deleted', result);
+
+      // Notify all clients to refresh trash
+      io.emit('trash-updated');
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
   // Handle disconnection
   socket.on('disconnect', () => {
     const user = users.get(socket.id);

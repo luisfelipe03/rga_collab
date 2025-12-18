@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useSocket } from '../context/SocketContext';
 import About from './About';
+import Trash from './Trash';
 import '../styles/Dashboard.css';
 
 const Dashboard = () => {
@@ -13,10 +14,11 @@ const Dashboard = () => {
     joinDocument,
     logout,
   } = useApp();
-  const { connected } = useSocket();
+  const { socket, connected } = useSocket();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDocTitle, setNewDocTitle] = useState('');
   const [showAbout, setShowAbout] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
 
   useEffect(() => {
     loadDocuments();
@@ -35,6 +37,23 @@ const Dashboard = () => {
     joinDocument(documentId);
   };
 
+  const handleDeleteDocument = (documentId, title, activeCollaborators) => {
+    if (activeCollaborators > 0) {
+      alert(
+        'Não é possível excluir o documento enquanto houver usuários editando.'
+      );
+      return;
+    }
+
+    if (
+      window.confirm(`Tem certeza que deseja mover "${title}" para a lixeira?`)
+    ) {
+      if (socket && currentUser) {
+        socket.emit('delete-document', { documentId, userId: currentUser.id });
+      }
+    }
+  };
+
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
@@ -50,7 +69,13 @@ const Dashboard = () => {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-left">
-          <h1>Documentos</h1>
+          <img src="/ufape-logo.png" alt="UFAPE" className="dashboard-logo" />
+          <div className="header-title-group">
+            <h1>RGA collab</h1>
+            <span className="header-subtitle">
+              Sistema de Edição Colaborativa
+            </span>
+          </div>
           <div className="connection-status">
             <span
               className={`status-indicator ${
@@ -63,6 +88,9 @@ const Dashboard = () => {
 
         <div className="header-right">
           <span className="username">{currentUser?.username}</span>
+          <button onClick={() => setShowTrash(true)} className="btn-secondary">
+            Lixeira
+          </button>
           <button onClick={() => setShowAbout(true)} className="btn-secondary">
             Sobre
           </button>
@@ -95,12 +123,32 @@ const Dashboard = () => {
                   <span>Criado em: {formatDate(doc.createdAt)}</span>
                   <span>Colaboradores: {doc.activeCollaborators || 0}</span>
                 </div>
-                <button
-                  onClick={() => handleJoinDocument(doc.documentId)}
-                  className="btn-open"
-                >
-                  Abrir
-                </button>
+                <div className="document-card-actions">
+                  <button
+                    onClick={() => handleJoinDocument(doc.documentId)}
+                    className="btn-open"
+                  >
+                    Abrir
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleDeleteDocument(
+                        doc.documentId,
+                        doc.title,
+                        doc.activeCollaborators
+                      )
+                    }
+                    className="btn-delete"
+                    disabled={doc.activeCollaborators > 0}
+                    title={
+                      doc.activeCollaborators > 0
+                        ? 'Não é possível excluir enquanto houver usuários editando'
+                        : 'Mover para lixeira'
+                    }
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             ))
           )}
@@ -145,6 +193,7 @@ const Dashboard = () => {
       )}
 
       {showAbout && <About onClose={() => setShowAbout(false)} />}
+      {showTrash && <Trash onClose={() => setShowTrash(false)} />}
     </div>
   );
 };

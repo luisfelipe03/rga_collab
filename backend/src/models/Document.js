@@ -52,6 +52,16 @@ const documentSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  deleted: {
+    type: Boolean,
+    default: false,
+  },
+  deletedAt: {
+    type: Date,
+  },
+  deletedBy: {
+    type: String,
+  },
 });
 
 // Update the updatedAt timestamp before saving

@@ -230,7 +230,7 @@ class DocumentService {
    */
   async listDocuments() {
     return await Document.find(
-      {},
+      { deleted: false },
       {
         documentId: 1,
         title: 1,
@@ -240,6 +240,79 @@ class DocumentService {
         updatedAt: 1,
       }
     ).sort({ updatedAt: -1 });
+  }
+
+  /**
+   * List deleted documents (trash)
+   */
+  async listDeletedDocuments() {
+    return await Document.find(
+      { deleted: true },
+      {
+        documentId: 1,
+        title: 1,
+        createdBy: 1,
+        deletedAt: 1,
+        deletedBy: 1,
+      }
+    ).sort({ deletedAt: -1 });
+  }
+
+  /**
+   * Soft delete a document
+   */
+  async deleteDocument(documentId, userId) {
+    const doc = await Document.findOne({ documentId });
+    if (!doc) {
+      throw new Error('Document not found');
+    }
+
+    if (doc.deleted) {
+      throw new Error('Document already deleted');
+    }
+
+    doc.deleted = true;
+    doc.deletedAt = new Date();
+    doc.deletedBy = userId;
+    await doc.save();
+
+    return { success: true, message: 'Document moved to trash' };
+  }
+
+  /**
+   * Restore a deleted document
+   */
+  async restoreDocument(documentId) {
+    const doc = await Document.findOne({ documentId });
+    if (!doc) {
+      throw new Error('Document not found');
+    }
+
+    if (!doc.deleted) {
+      throw new Error('Document is not deleted');
+    }
+
+    doc.deleted = false;
+    doc.deletedAt = undefined;
+    doc.deletedBy = undefined;
+    await doc.save();
+
+    return { success: true, message: 'Document restored' };
+  }
+
+  /**
+   * Permanently delete a document
+   */
+  async permanentlyDeleteDocument(documentId) {
+    const result = await Document.deleteOne({ documentId, deleted: true });
+    if (result.deletedCount === 0) {
+      throw new Error('Document not found in trash');
+    }
+
+    // Remove from loaded instances
+    this.documents.delete(documentId);
+
+    return { success: true, message: 'Document permanently deleted' };
   }
 }
 

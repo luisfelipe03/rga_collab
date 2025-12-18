@@ -17,7 +17,11 @@ const LoginScreen = () => {
     <div className="login-screen">
       <div className="login-container">
         <div className="login-header">
+          <img src="/ufape-logo.png" alt="UFAPE" className="login-logo" />
           <h1>RGA collab</h1>
+          <p className="institution-name">
+            Universidade Federal do Agreste de Pernambuco
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">

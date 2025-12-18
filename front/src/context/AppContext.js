@@ -61,9 +61,24 @@ export const AppProvider = ({ children }) => {
       setMetrics(newMetrics);
     });
 
+    socket.on('documents-updated', () => {
+      // Reload documents list when a document is deleted or restored
+      socket.emit('list-documents');
+    });
+
+    socket.on('document-deleted', ({ message }) => {
+      alert(message);
+      socket.emit('list-documents');
+    });
+
+    socket.on('document-restored', ({ message }) => {
+      alert(message);
+      socket.emit('list-documents');
+    });
+
     socket.on('error', ({ message }) => {
       console.error('Socket error:', message);
-      alert(`Error: ${message}`);
+      alert(`Erro: ${message}`);
     });
 
     return () => {
@@ -73,6 +88,9 @@ export const AppProvider = ({ children }) => {
       socket.off('document-loaded');
       socket.off('room-users');
       socket.off('metrics-update');
+      socket.off('documents-updated');
+      socket.off('document-deleted');
+      socket.off('document-restored');
       socket.off('error');
     };
   }, [socket]);
