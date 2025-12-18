@@ -1,0 +1,88 @@
+.editor-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--surface);
+}
+
+.editor-header {
+  background-color: var(--background);
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: var(--shadow);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.btn-back {
+  background-color: transparent;
+  color: var(--text-secondary);
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.btn-back:hover {
+  background-color: var(--surface);
+  color: var(--text-primary);
+}
+
+.document-info h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.document-id {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-family: monospace;
+  cursor: pointer;
+}
+
+.document-id:hover {
+  color: var(--primary-color);
+}
+
+.editor-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.editor-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-textarea {
+  flex: 1;
+  border: none;
+  padding: 2rem;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  resize: none;
+  background-color: var(--background);
+  color: var(--text-primary);
+}
+
+.editor-textarea:focus {
+  outline: none;
+}
+
+.editor-textarea::placeholder {
+  color: var(--text-secondary);
+}

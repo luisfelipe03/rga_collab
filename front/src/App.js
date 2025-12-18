@@ -1,24 +1,32 @@
-import logo from './logo.svg';
+import React from 'react';
+import { SocketProvider } from './context/SocketContext';
+import { AppProvider, useApp } from './context/AppContext';
+import LoginScreen from './components/LoginScreen';
+import Dashboard from './components/Dashboard';
+import Editor from './components/Editor';
 import './App.css';
+
+const AppContent = () => {
+  const { currentUser, currentDocument } = useApp();
+
+  if (!currentUser) {
+    return <LoginScreen />;
+  }
+
+  if (currentDocument) {
+    return <Editor />;
+  }
+
+  return <Dashboard />;
+};
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <SocketProvider>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </SocketProvider>
   );
 }
 
