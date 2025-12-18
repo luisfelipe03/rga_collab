@@ -139,15 +139,41 @@ io.on('connection', (socket) => {
 
       socket.emit('document-loaded', document);
 
-      // Notify others in the room
-      socket.to(documentId).emit('user-joined', {
-        userId: user.id,
-        username: user.username,
-      });
+      // Get ALL users currently in the room (including the one who just joined)
+      const roomUsers = [];
+      const socketsInRoom = documentRooms.get(documentId);
+      if (socketsInRoom) {
+        for (const socketId of socketsInRoom) {
+          const roomUser = users.get(socketId);
+          if (roomUser) {
+            roomUsers.push({
+              userId: roomUser.id,
+              username: roomUser.username,
+            });
+          }
+        }
+      }
 
-      console.log(`User ${user.username} joined document ${documentId}`);
+      // Send complete room users list to ALL users in the room
+      io.to(documentId).emit('room-users', roomUsers);
+
+      console.log(
+        `User ${user.username} joined document ${documentId}. Total users: ${roomUsers.length}`
+      );
     } catch (error) {
       socket.emit('error', { message: error.message });
+    }
+  });
+
+  // Handle cursor updates
+  socket.on('cursor-update', ({ documentId, position }) => {
+    const user = users.get(socket.id);
+    if (user && user.currentDocument === documentId) {
+      socket.to(documentId).emit('cursor-move', {
+        userId: user.id,
+        username: user.username,
+        position,
+      });
     }
   });
 
@@ -201,12 +227,26 @@ io.on('connection', (socket) => {
         room.delete(socket.id);
       }
 
-      socket.to(documentId).emit('user-left', {
-        userId: user.id,
-        username: user.username,
-      });
+      // Get updated list of users in the room
+      const roomUsers = [];
+      if (room) {
+        for (const socketId of room) {
+          const roomUser = users.get(socketId);
+          if (roomUser) {
+            roomUsers.push({
+              userId: roomUser.id,
+              username: roomUser.username,
+            });
+          }
+        }
+      }
 
-      console.log(`User ${user.username} left document ${documentId}`);
+      // Send updated user list to remaining users
+      io.to(documentId).emit('room-users', roomUsers);
+
+      console.log(
+        `User ${user.username} left document ${documentId}. Remaining users: ${roomUsers.length}`
+      );
     }
   });
 
@@ -221,12 +261,29 @@ io.on('connection', (socket) => {
           room.delete(socket.id);
         }
 
-        socket.to(user.currentDocument).emit('user-left', {
-          userId: user.id,
-          username: user.username,
-        });
+        // Get updated list of users in the room
+        const roomUsers = [];
+        if (room) {
+          for (const socketId of room) {
+            const roomUser = users.get(socketId);
+            if (roomUser) {
+              roomUsers.push({
+                userId: roomUser.id,
+                username: roomUser.username,
+              });
+            }
+          }
+        }
+
+        // Send updated user list to remaining users
+        io.to(user.currentDocument).emit('room-users', roomUsers);
+
+        console.log(
+          `User ${user.username} disconnected from document ${user.currentDocument}`
+        );
       }
 
+      // Remove user from users map
       console.log(`User disconnected: ${user.username} (${user.id})`);
       users.delete(socket.id);
       io.emit('users', Array.from(users.values()));

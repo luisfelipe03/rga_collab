@@ -44,30 +44,17 @@ export const AppProvider = ({ children }) => {
     socket.on('document-loaded', (doc) => {
       setCurrentDocument(doc);
       setEditorContent(doc.content || '');
-      // Extract collaborators from document
-      if (doc.collaborators) {
-        setCollaborators(
-          doc.collaborators.map((c) => ({
-            userId: c.userId,
-            username: c.username,
-            active: true,
-          }))
-        );
-      }
     });
 
-    socket.on('user-joined', ({ userId, username }) => {
-      setCollaborators((prev) => {
-        const exists = prev.find((c) => c.userId === userId);
-        if (!exists) {
-          return [...prev, { userId, username, active: true }];
-        }
-        return prev;
-      });
-    });
-
-    socket.on('user-left', ({ userId, username }) => {
-      setCollaborators((prev) => prev.filter((c) => c.userId !== userId));
+    socket.on('room-users', (users) => {
+      // Set all current users in the room - this is the single source of truth
+      setCollaborators(
+        users.map((u) => ({
+          userId: u.userId,
+          username: u.username,
+          active: true,
+        }))
+      );
     });
 
     socket.on('metrics-update', (newMetrics) => {
@@ -84,8 +71,7 @@ export const AppProvider = ({ children }) => {
       socket.off('documents-list');
       socket.off('document-created');
       socket.off('document-loaded');
-      socket.off('user-joined');
-      socket.off('user-left');
+      socket.off('room-users');
       socket.off('metrics-update');
       socket.off('error');
     };

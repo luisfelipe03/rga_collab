@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useSocket } from '../context/SocketContext';
-import CollaboratorsList from './CollaboratorsList';
+import UsersPanel from './UsersPanel';
 import MetricsPanel from './MetricsPanel';
+import RemoteCursors from './RemoteCursors';
 import '../styles/Editor.css';
 
 const Editor = () => {
@@ -19,6 +20,7 @@ const Editor = () => {
   const { socket } = useSocket();
   const textareaRef = useRef(null);
   const [lastContent, setLastContent] = useState('');
+  const [remoteCursors, setRemoteCursors] = useState({});
 
   useEffect(() => {
     setLastContent(editorContent);
@@ -51,12 +53,41 @@ const Editor = () => {
       }
     };
 
+    const handleCursorMove = ({ userId, username, position }) => {
+      setRemoteCursors((prev) => ({
+        ...prev,
+        [userId]: { username, position, timestamp: Date.now() },
+      }));
+    };
+
     socket.on('operation', handleOperation);
+    socket.on('cursor-move', handleCursorMove);
 
     return () => {
       socket.off('operation', handleOperation);
+      socket.off('cursor-move', handleCursorMove);
     };
   }, [socket, currentDocument, setEditorContent]);
+
+  // Limpar cursores de usuários que saíram
+  useEffect(() => {
+    if (!collaborators) return;
+
+    const activeUserIds = new Set(collaborators.map((c) => c.userId));
+    setRemoteCursors((prev) => {
+      const newCursors = { ...prev };
+      let changed = false;
+
+      Object.keys(newCursors).forEach((userId) => {
+        if (!activeUserIds.has(userId)) {
+          delete newCursors[userId];
+          changed = true;
+        }
+      });
+
+      return changed ? newCursors : prev;
+    });
+  }, [collaborators]);
 
   const handleTextChange = (e) => {
     const newContent = e.target.value;
@@ -89,6 +120,16 @@ const Editor = () => {
     }
 
     setLastContent(newContent);
+  };
+
+  const handleSelectionChange = () => {
+    if (!textareaRef.current || !socket || !currentDocument) return;
+
+    const position = textareaRef.current.selectionStart;
+    socket.emit('cursor-update', {
+      documentId: currentDocument.documentId,
+      position,
+    });
   };
 
   const findInsertPosition = (oldStr, newStr) => {
@@ -133,23 +174,30 @@ const Editor = () => {
             </span>
           </div>
         </div>
-
-        <CollaboratorsList
-          collaborators={collaborators}
-          currentUser={currentUser}
-        />
       </header>
 
       <div className="editor-content">
+        <UsersPanel collaborators={collaborators} currentUser={currentUser} />
+
         <div className="editor-main">
-          <textarea
-            ref={textareaRef}
-            className="editor-textarea"
-            value={editorContent}
-            onChange={handleTextChange}
-            placeholder="Start typing..."
-            spellCheck="false"
-          />
+          <div className="editor-wrapper">
+            <textarea
+              ref={textareaRef}
+              className="editor-textarea"
+              value={editorContent}
+              onChange={handleTextChange}
+              onSelect={handleSelectionChange}
+              onClick={handleSelectionChange}
+              onKeyUp={handleSelectionChange}
+              placeholder="Start typing..."
+              spellCheck="false"
+            />
+            <RemoteCursors
+              cursors={remoteCursors}
+              textareaRef={textareaRef}
+              collaborators={collaborators}
+            />
+          </div>
         </div>
 
         <MetricsPanel metrics={metrics} />
