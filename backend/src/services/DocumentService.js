@@ -98,9 +98,6 @@ class DocumentService {
     }
 
     const content = rga.getText();
-    console.log(
-      `Document loaded: ${documentId}, content length: ${content.length}`
-    );
 
     return {
       documentId,
@@ -114,7 +111,7 @@ class DocumentService {
    * Apply an operation to a document
    */
   async applyOperation(documentId, operation) {
-    const startTime = Date.now();
+    const startTime = process.hrtime.bigint();
 
     const rga = this.activeDocuments.get(documentId);
 
@@ -149,8 +146,9 @@ class DocumentService {
       return { content: rga.getText(), operation: null };
     }
 
-    // Calculate latency
-    const latency = Date.now() - startTime;
+    // Calculate latency with microsecond precision
+    const endTime = process.hrtime.bigint();
+    const latency = Number(endTime - startTime) / 1000000; // Convert nanoseconds to milliseconds
 
     // Get delta size for metrics
     const delta = rga.getDelta();
@@ -169,10 +167,6 @@ class DocumentService {
     MetricsService.updateCharacterCount(documentId, rgaMetrics.textLength);
     MetricsService.updateNodeCount(documentId, rgaMetrics.totalNodes);
 
-    console.log(
-      `📊 Operation metrics - Type: ${rgaOperation.type}, Latency: ${latency}ms, Delta: ${deltaSize} bytes`
-    );
-
     // Save operation to database
     await Document.findOneAndUpdate(
       { documentId },
@@ -180,10 +174,6 @@ class DocumentService {
         $push: { operations: rgaOperation },
         rgaState: rga.getState(),
       }
-    );
-
-    console.log(
-      `RGA operation applied: ${rgaOperation.type}, content: "${rga.getText()}"`
     );
 
     return {

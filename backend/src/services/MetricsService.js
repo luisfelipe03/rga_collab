@@ -3,8 +3,6 @@ import GCounter from '../counters/GCounter.js';
 
 class MetricsService {
   constructor() {
-    console.log('📊 MetricsService initialized with GCounter CRDTs');
-
     // Per-document metrics storage
     this.documentMetrics = new Map();
 
@@ -60,10 +58,6 @@ class MetricsService {
         size: deltaSize,
       });
     }
-
-    console.log(
-      `📊 Operation recorded: ${operationType}, latency: ${latency}ms, operations: ${metrics.operationCounter.value()}`
-    );
   }
 
   // Update character count
@@ -106,7 +100,7 @@ class MetricsService {
       nodeCount: metrics.nodeCount,
       insertOperations: metrics.insertCounter.value(),
       deleteOperations: metrics.deleteCounter.value(),
-      averageLatency: avgLatency.toFixed(2),
+      averageLatency: avgLatency.toFixed(4),
       totalDeltaSize,
       averageDeltaSize: avgDeltaSize.toFixed(2),
       networkStats: this.getCurrentNetworkStats(),
@@ -211,8 +205,6 @@ class MetricsService {
       remoteCounter.loadState(remoteMetrics.deleteCounter);
       localMetrics.deleteCounter.merge(remoteCounter);
     }
-
-    console.log(`📊 Merged metrics for document ${documentId}`);
   }
 
   /**

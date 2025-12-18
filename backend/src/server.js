@@ -49,8 +49,6 @@ const users = new Map();
 const documentRooms = new Map(); // documentId -> Set of socket IDs
 
 io.on('connection', (socket) => {
-  console.log('New client connected:', socket.id);
-
   // Handle user registration
   socket.on('register', (username) => {
     const userId = randomUUID();
@@ -65,8 +63,6 @@ io.on('connection', (socket) => {
 
     socket.emit('registered', user);
     io.emit('users', Array.from(users.values()));
-
-    console.log(`User registered: ${user.username} (${userId})`);
   });
 
   // Create new document
@@ -84,10 +80,6 @@ io.on('connection', (socket) => {
         title
       );
       socket.emit('document-created', document);
-
-      console.log(
-        `Document created by ${user.username}: ${document.documentId}`
-      );
     } catch (error) {
       socket.emit('error', { message: error.message });
     }
@@ -156,10 +148,6 @@ io.on('connection', (socket) => {
 
       // Send complete room users list to ALL users in the room
       io.to(documentId).emit('room-users', roomUsers);
-
-      console.log(
-        `User ${user.username} joined document ${documentId}. Total users: ${roomUsers.length}`
-      );
     } catch (error) {
       socket.emit('error', { message: error.message });
     }
@@ -204,13 +192,8 @@ io.on('connection', (socket) => {
         // Send metrics update to all users in the room
         const metrics = DocumentService.getDocumentMetrics(documentId);
         io.to(documentId).emit('metrics-update', metrics);
-
-        console.log(
-          `Operation applied by ${user.username} in ${documentId}: ${result.operation.type}, latency: ${result.latency}ms`
-        );
       }
     } catch (error) {
-      console.error('Operation error:', error);
       socket.emit('error', { message: error.message });
     }
   });
@@ -243,10 +226,6 @@ io.on('connection', (socket) => {
 
       // Send updated user list to remaining users
       io.to(documentId).emit('room-users', roomUsers);
-
-      console.log(
-        `User ${user.username} left document ${documentId}. Remaining users: ${roomUsers.length}`
-      );
     }
   });
 
@@ -277,20 +256,13 @@ io.on('connection', (socket) => {
 
         // Send updated user list to remaining users
         io.to(user.currentDocument).emit('room-users', roomUsers);
-
-        console.log(
-          `User ${user.username} disconnected from document ${user.currentDocument}`
-        );
       }
 
       // Remove user from users map
-      console.log(`User disconnected: ${user.username} (${user.id})`);
       users.delete(socket.id);
       io.emit('users', Array.from(users.values()));
     }
   });
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+httpServer.listen(PORT);

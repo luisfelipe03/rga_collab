@@ -29,27 +29,52 @@ const Editor = () => {
   useEffect(() => {
     if (!socket || !currentDocument) return;
 
-    const handleOperation = ({ operation }) => {
-      if (!textareaRef.current) return;
-
-      const textarea = textareaRef.current;
-      const currentContent = textarea.value;
-
+    const handleOperation = ({ operation, userId }) => {
       if (operation.type === 'insert') {
-        const newContent =
-          currentContent.slice(0, operation.position) +
-          operation.value +
-          currentContent.slice(operation.position);
+        setEditorContent((currentContent) => {
+          const newContent =
+            currentContent.slice(0, operation.position) +
+            operation.value +
+            currentContent.slice(operation.position);
+          setLastContent(newContent);
+          return newContent;
+        });
 
-        setEditorContent(newContent);
-        setLastContent(newContent);
+        // Atualizar posições dos cursores remotos após inserção
+        setRemoteCursors((prev) => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach((id) => {
+            if (updated[id] && updated[id].position >= operation.position) {
+              updated[id] = {
+                ...updated[id],
+                position: updated[id].position + 1,
+              };
+            }
+          });
+          return updated;
+        });
       } else if (operation.type === 'delete') {
-        const newContent =
-          currentContent.slice(0, operation.position) +
-          currentContent.slice(operation.position + 1);
+        setEditorContent((currentContent) => {
+          const newContent =
+            currentContent.slice(0, operation.position) +
+            currentContent.slice(operation.position + 1);
+          setLastContent(newContent);
+          return newContent;
+        });
 
-        setEditorContent(newContent);
-        setLastContent(newContent);
+        // Atualizar posições dos cursores remotos após deleção
+        setRemoteCursors((prev) => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach((id) => {
+            if (updated[id] && updated[id].position > operation.position) {
+              updated[id] = {
+                ...updated[id],
+                position: updated[id].position - 1,
+              };
+            }
+          });
+          return updated;
+        });
       }
     };
 
@@ -95,6 +120,8 @@ const Editor = () => {
 
     if (newContent === oldContent) return;
 
+    // Atualizar lastContent IMEDIATAMENTE antes de processar operações
+    setLastContent(newContent);
     setEditorContent(newContent);
 
     if (newContent.length > oldContent.length) {
@@ -108,6 +135,13 @@ const Editor = () => {
           value: char,
           replicaId: currentUser.id,
         });
+
+        // Enviar atualização do cursor após inserção
+        setTimeout(() => {
+          if (textareaRef.current) {
+            handleSelectionChange();
+          }
+        }, 0);
       }
     } else if (newContent.length < oldContent.length) {
       const position = findDeletePosition(oldContent, newContent);
@@ -117,9 +151,14 @@ const Editor = () => {
         position,
         replicaId: currentUser.id,
       });
-    }
 
-    setLastContent(newContent);
+      // Enviar atualização do cursor após deleção
+      setTimeout(() => {
+        if (textareaRef.current) {
+          handleSelectionChange();
+        }
+      }, 0);
+    }
   };
 
   const handleSelectionChange = () => {
