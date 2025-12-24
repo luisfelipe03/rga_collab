@@ -18,6 +18,9 @@ class RGA {
       origin: null,
       tombstone: true,
     });
+
+    // Buffer para rastrear nós adicionados desde último getDelta (para métricas)
+    this.deltaBuffer = [];
   }
 
   // Gera ID único: "contador@replica" (Ex: "1@alice")
@@ -84,6 +87,13 @@ class RGA {
       const [time] = forcedId.split('@');
       this.counter = Math.max(this.counter, parseInt(time));
     }
+
+    // Registra no buffer de delta para métricas
+    this.deltaBuffer.push({
+      id: newNode.id,
+      value: newNode.value,
+      origin: newNode.origin,
+    });
 
     return newNode; // Retorna para você enviar via rede
   }
@@ -288,6 +298,22 @@ class RGA {
 
     // Atualiza o contador para o maior valor
     this.counter = Math.max(this.counter, state.counter || 0);
+  }
+
+  // ===========================================================================
+  // MÉTODOS DE MÉTRICAS E DELTA
+  // ===========================================================================
+
+  // --- Delta: Retorna nós adicionados desde última chamada (para métricas) ---
+  getDelta() {
+    const delta = {
+      replicaId: this.id,
+      nodes: [...this.deltaBuffer],
+      counter: this.counter,
+    };
+    // Limpa o buffer após retornar
+    this.deltaBuffer = [];
+    return delta;
   }
 
   // --- Métricas para debug ---

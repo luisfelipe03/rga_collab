@@ -70,8 +70,8 @@ class DocumentService {
       // Load complete state from database
       if (
         document.rgaState &&
-        document.rgaState.vertices &&
-        document.rgaState.vertices.length > 0
+        document.rgaState.nodes &&
+        document.rgaState.nodes.length > 0
       ) {
         rga.loadState(document.rgaState);
       }
@@ -125,17 +125,13 @@ class DocumentService {
     if (operation.type === 'insert' && operation.position !== undefined) {
       rgaOperation = rga.insertAtPosition(
         operation.value,
-        operation.position,
-        operation.replicaId
+        operation.position
       );
     } else if (
       operation.type === 'delete' &&
       operation.position !== undefined
     ) {
-      rgaOperation = rga.deleteAtPosition(
-        operation.position,
-        operation.replicaId
-      );
+      rgaOperation = rga.removeAtPosition(operation.position);
     } else {
       // Already an RGA operation with vertexId
       rga.applyRemoteOperation(operation);
