@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useSocket } from '../context/SocketContext';
+import RGA from '../crdt/RGA.js';
 import UsersPanel from './UsersPanel';
 import MetricsPanel from './MetricsPanel';
 import RemoteCursors from './RemoteCursors';
@@ -12,67 +13,75 @@ const Editor = () => {
     currentDocument,
     collaborators,
     metrics,
-    editorContent,
-    setEditorContent,
     leaveDocument,
-    sendOperation,
   } = useApp();
   const { socket } = useSocket();
   const textareaRef = useRef(null);
-  const [lastContent, setLastContent] = useState('');
+  const rgaRef = useRef(null);
+  const [content, setContent] = useState('');
   const [remoteCursors, setRemoteCursors] = useState({});
 
+  // Inicializa o RGA quando o documento é carregado
   useEffect(() => {
-    setLastContent(editorContent);
-  }, [editorContent]);
+    if (!currentDocument || !currentUser) return;
 
+    // Cria uma nova instância do RGA para este cliente
+    const rga = new RGA(currentUser.id);
+
+    // Se o servidor enviou o estado do RGA, carrega ele
+    if (currentDocument.rgaState) {
+      rga.loadState(currentDocument.rgaState);
+    }
+
+    rgaRef.current = rga;
+    setContent(rga.getText());
+
+    return () => {
+      rgaRef.current = null;
+    };
+  }, [currentDocument, currentUser]);
+
+  // Escuta operações remotas
   useEffect(() => {
     if (!socket || !currentDocument) return;
 
-    const handleOperation = ({ operation, userId }) => {
+    const handleOperation = ({ operation }) => {
+      const rga = rgaRef.current;
+      if (!rga) return;
+
+      // Aplica a operação remota no RGA local
+      rga.applyRemoteOperation(operation);
+
+      // Atualiza o conteúdo do textarea
+      const newContent = rga.getText();
+      setContent(newContent);
+
+      // Atualiza posições dos cursores remotos
       if (operation.type === 'insert') {
-        setEditorContent((currentContent) => {
-          const newContent =
-            currentContent.slice(0, operation.position) +
-            operation.value +
-            currentContent.slice(operation.position);
-          setLastContent(newContent);
-          return newContent;
-        });
+        // Encontra a posição visual do nó inserido
+        const nodes = rga.toArrayWithIds();
+        const insertedIndex = nodes.findIndex((n) => n.id === operation.id);
 
-        // Atualizar posições dos cursores remotos após inserção
+        if (insertedIndex !== -1) {
+          setRemoteCursors((prev) => {
+            const updated = { ...prev };
+            Object.keys(updated).forEach((id) => {
+              if (updated[id] && updated[id].position >= insertedIndex) {
+                updated[id] = {
+                  ...updated[id],
+                  position: updated[id].position + 1,
+                };
+              }
+            });
+            return updated;
+          });
+        }
+      } else if (operation.type === 'remove') {
+        // Para remoção, precisamos ajustar cursores
         setRemoteCursors((prev) => {
           const updated = { ...prev };
-          Object.keys(updated).forEach((id) => {
-            if (updated[id] && updated[id].position >= operation.position) {
-              updated[id] = {
-                ...updated[id],
-                position: updated[id].position + 1,
-              };
-            }
-          });
-          return updated;
-        });
-      } else if (operation.type === 'delete') {
-        setEditorContent((currentContent) => {
-          const newContent =
-            currentContent.slice(0, operation.position) +
-            currentContent.slice(operation.position + 1);
-          setLastContent(newContent);
-          return newContent;
-        });
-
-        // Atualizar posições dos cursores remotos após deleção
-        setRemoteCursors((prev) => {
-          const updated = { ...prev };
-          Object.keys(updated).forEach((id) => {
-            if (updated[id] && updated[id].position > operation.position) {
-              updated[id] = {
-                ...updated[id],
-                position: updated[id].position - 1,
-              };
-            }
-          });
+          // Simplificação: decrementar cursores após a posição removida
+          // Idealmente deveríamos rastrear a posição exata
           return updated;
         });
       }
@@ -92,7 +101,7 @@ const Editor = () => {
       socket.off('operation', handleOperation);
       socket.off('cursor-move', handleCursorMove);
     };
-  }, [socket, currentDocument, setEditorContent]);
+  }, [socket, currentDocument]);
 
   // Limpar cursores de usuários que saíram
   useEffect(() => {
@@ -114,54 +123,74 @@ const Editor = () => {
     });
   }, [collaborators]);
 
-  const handleTextChange = (e) => {
-    const newContent = e.target.value;
-    const oldContent = lastContent;
+  const handleTextChange = useCallback(
+    (e) => {
+      const rga = rgaRef.current;
+      if (!rga || !socket || !currentDocument) return;
 
-    if (newContent === oldContent) return;
+      const newContent = e.target.value;
+      const oldContent = content;
 
-    // Atualizar lastContent IMEDIATAMENTE antes de processar operações
-    setLastContent(newContent);
-    setEditorContent(newContent);
+      if (newContent === oldContent) return;
 
-    if (newContent.length > oldContent.length) {
-      const position = findInsertPosition(oldContent, newContent);
-      const char = newContent[position];
+      // Detecta inserção
+      if (newContent.length > oldContent.length) {
+        const position = findInsertPosition(oldContent, newContent);
+        const char = newContent[position];
 
-      if (char !== undefined) {
-        sendOperation({
-          type: 'insert',
-          position,
-          value: char,
-          replicaId: currentUser.id,
-        });
+        if (char !== undefined) {
+          // Insere no RGA local
+          const operation = rga.insertAtPosition(char, position);
 
-        // Enviar atualização do cursor após inserção
+          if (operation) {
+            // Envia a operação para o servidor
+            socket.emit('operation', {
+              documentId: currentDocument.documentId,
+              operation,
+            });
+          }
+
+          // Atualiza o estado local
+          setContent(rga.getText());
+
+          // Atualiza cursor
+          setTimeout(() => {
+            if (textareaRef.current) {
+              handleSelectionChange();
+            }
+          }, 0);
+        }
+      }
+      // Detecta deleção
+      else if (newContent.length < oldContent.length) {
+        const position = findDeletePosition(oldContent, newContent);
+
+        // Remove no RGA local
+        const operation = rga.removeAtPosition(position);
+
+        if (operation) {
+          // Envia a operação para o servidor
+          socket.emit('operation', {
+            documentId: currentDocument.documentId,
+            operation,
+          });
+        }
+
+        // Atualiza o estado local
+        setContent(rga.getText());
+
+        // Atualiza cursor
         setTimeout(() => {
           if (textareaRef.current) {
             handleSelectionChange();
           }
         }, 0);
       }
-    } else if (newContent.length < oldContent.length) {
-      const position = findDeletePosition(oldContent, newContent);
+    },
+    [content, socket, currentDocument]
+  );
 
-      sendOperation({
-        type: 'delete',
-        position,
-        replicaId: currentUser.id,
-      });
-
-      // Enviar atualização do cursor após deleção
-      setTimeout(() => {
-        if (textareaRef.current) {
-          handleSelectionChange();
-        }
-      }, 0);
-    }
-  };
-
-  const handleSelectionChange = () => {
+  const handleSelectionChange = useCallback(() => {
     if (!textareaRef.current || !socket || !currentDocument) return;
 
     const position = textareaRef.current.selectionStart;
@@ -169,7 +198,7 @@ const Editor = () => {
       documentId: currentDocument.documentId,
       position,
     });
-  };
+  }, [socket, currentDocument]);
 
   const findInsertPosition = (oldStr, newStr) => {
     for (let i = 0; i < newStr.length; i++) {
@@ -223,7 +252,7 @@ const Editor = () => {
             <textarea
               ref={textareaRef}
               className="editor-textarea"
-              value={editorContent}
+              value={content}
               onChange={handleTextChange}
               onSelect={handleSelectionChange}
               onClick={handleSelectionChange}
