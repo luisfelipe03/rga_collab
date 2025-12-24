@@ -133,7 +133,7 @@ class DocumentService {
     ) {
       rgaOperation = rga.removeAtPosition(operation.position);
     } else {
-      // Already an RGA operation with vertexId
+      // Already an RGA operation with id
       rga.applyRemoteOperation(operation);
       rgaOperation = operation;
     }

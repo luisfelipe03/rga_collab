@@ -15,14 +15,12 @@ const documentSchema = new mongoose.Schema({
     {
       type: {
         type: String,
-        enum: ['insert', 'delete'],
+        enum: ['insert', 'remove'],
         required: true,
       },
-      vertexId: String,
-      value: String,
-      afterId: String,
-      timestamp: Number,
-      replicaId: String,
+      id: String,      // Formato: "contador@replica" (ex: "1@alice")
+      value: String,   // Caractere inserido
+      origin: String,  // ID do nó pai
       createdAt: {
         type: Date,
         default: Date.now,
