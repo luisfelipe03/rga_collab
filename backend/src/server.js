@@ -178,7 +178,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle text operations
+  // Handle text operations (single)
   socket.on('operation', async ({ documentId, operation }) => {
     try {
       const user = users.get(socket.id);
@@ -198,6 +198,49 @@ io.on('connection', (socket) => {
         socket.to(documentId).emit('operation', {
           operation: result.operation,
           delta: result.delta,
+          userId: user.id,
+          username: user.username,
+        });
+
+        // Send metrics update to all users in the room
+        const metrics = DocumentService.getDocumentMetrics(documentId);
+        io.to(documentId).emit('metrics-update', metrics);
+      }
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
+  // Handle batch text operations (multiple)
+  socket.on('operations', async ({ documentId, operations }) => {
+    try {
+      const user = users.get(socket.id);
+      if (!user || user.currentDocument !== documentId) {
+        socket.emit('error', { message: 'Not in document' });
+        return;
+      }
+
+      if (!Array.isArray(operations) || operations.length === 0) {
+        return;
+      }
+
+      const appliedOperations = [];
+
+      // Apply all operations in sequence
+      for (const operation of operations) {
+        const result = await DocumentService.applyOperation(
+          documentId,
+          operation
+        );
+        if (result.operation) {
+          appliedOperations.push(result.operation);
+        }
+      }
+
+      if (appliedOperations.length > 0) {
+        // Broadcast all operations at once to other clients
+        socket.to(documentId).emit('operations', {
+          operations: appliedOperations,
           userId: user.id,
           username: user.username,
         });

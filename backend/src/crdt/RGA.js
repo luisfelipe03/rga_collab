@@ -138,6 +138,27 @@ class RGA {
     return result;
   }
 
+  // --- Debug: Retorna estrutura completa da lista encadeada ---
+  // Inclui root + todos os nós. Para uso no Editor, filtrar com .filter(n => !n.isRoot)
+  getStructure() {
+    const result = [];
+    let curr = 'root';
+
+    while (curr) {
+      const node = this.nodes.get(curr);
+      result.push({
+        id: node.id,
+        value: node.value,
+        origin: node.origin,
+        tombstone: node.tombstone,
+        next: node.next,
+        isRoot: node.id === 'root'
+      });
+      curr = node.next;
+    }
+    return result;
+  }
+
   // --- Helper: Encontra o ID do nó na posição especificada (0-indexed) ---
   getNodeIdAtPosition(position) {
     let currentPos = 0;
@@ -233,7 +254,7 @@ class RGA {
   //
   // ===========================================================================
 
-  // --- Aplicar operação remota ---
+  // --- Aplicar operação remota (singular) ---
   applyRemoteOperation(operation) {
     if (operation.type === 'insert') {
       // A função add já é idempotente e usa o algoritmo RGA correto
@@ -241,6 +262,12 @@ class RGA {
     } else if (operation.type === 'remove') {
       this.remove(operation.id);
     }
+  }
+
+  // --- Aplicar operações remotas em batch (plural) ---
+  applyRemoteOperations(operations) {
+    if (!Array.isArray(operations)) return;
+    operations.forEach(op => this.applyRemoteOperation(op));
   }
 
   // --- Estado para sincronização ---

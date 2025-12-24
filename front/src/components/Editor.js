@@ -20,15 +20,14 @@ const Editor = () => {
   const rgaRef = useRef(null);
   const [content, setContent] = useState('');
   const [remoteCursors, setRemoteCursors] = useState({});
+  const [showDebug, setShowDebug] = useState(false); // Estado para toggle de debug
 
   // Inicializa o RGA quando o documento é carregado
   useEffect(() => {
     if (!currentDocument || !currentUser) return;
 
-    // Cria uma nova instância do RGA para este cliente
     const rga = new RGA(currentUser.id);
 
-    // Se o servidor enviou o estado do RGA, carrega ele
     if (currentDocument.rgaState) {
       rga.loadState(currentDocument.rgaState);
     }
@@ -45,46 +44,22 @@ const Editor = () => {
   useEffect(() => {
     if (!socket || !currentDocument) return;
 
+    // Handler para operação única
     const handleOperation = ({ operation }) => {
       const rga = rgaRef.current;
       if (!rga) return;
 
-      // Aplica a operação remota no RGA local
       rga.applyRemoteOperation(operation);
+      setContent(rga.getText());
+    };
 
-      // Atualiza o conteúdo do textarea
-      const newContent = rga.getText();
-      setContent(newContent);
+    // Handler para batch de operações
+    const handleOperations = ({ operations }) => {
+      const rga = rgaRef.current;
+      if (!rga || !Array.isArray(operations)) return;
 
-      // Atualiza posições dos cursores remotos
-      if (operation.type === 'insert') {
-        // Encontra a posição visual do nó inserido
-        const nodes = rga.toArrayWithIds();
-        const insertedIndex = nodes.findIndex((n) => n.id === operation.id);
-
-        if (insertedIndex !== -1) {
-          setRemoteCursors((prev) => {
-            const updated = { ...prev };
-            Object.keys(updated).forEach((id) => {
-              if (updated[id] && updated[id].position >= insertedIndex) {
-                updated[id] = {
-                  ...updated[id],
-                  position: updated[id].position + 1,
-                };
-              }
-            });
-            return updated;
-          });
-        }
-      } else if (operation.type === 'remove') {
-        // Para remoção, precisamos ajustar cursores
-        setRemoteCursors((prev) => {
-          const updated = { ...prev };
-          // Simplificação: decrementar cursores após a posição removida
-          // Idealmente deveríamos rastrear a posição exata
-          return updated;
-        });
-      }
+      rga.applyRemoteOperations(operations);  // Usa o novo método
+      setContent(rga.getText());
     };
 
     const handleCursorMove = ({ userId, username, position }) => {
@@ -95,10 +70,12 @@ const Editor = () => {
     };
 
     socket.on('operation', handleOperation);
+    socket.on('operations', handleOperations);  // Novo: batch
     socket.on('cursor-move', handleCursorMove);
 
     return () => {
       socket.off('operation', handleOperation);
+      socket.off('operations', handleOperations);  // Novo: batch
       socket.off('cursor-move', handleCursorMove);
     };
   }, [socket, currentDocument]);
@@ -133,53 +110,56 @@ const Editor = () => {
 
       if (newContent === oldContent) return;
 
-      // Detecta inserção
+      const operations = [];  // Coleta operações para batch
+
+      // Detecta inserção (pode ser múltiplos caracteres - paste)
       if (newContent.length > oldContent.length) {
         const position = findInsertPosition(oldContent, newContent);
-        const char = newContent[position];
+        const insertedCount = newContent.length - oldContent.length;
 
-        if (char !== undefined) {
-          // Insere no RGA local
-          const operation = rga.insertAtPosition(char, position);
-
-          if (operation) {
-            // Envia a operação para o servidor
-            socket.emit('operation', {
-              documentId: currentDocument.documentId,
-              operation,
-            });
-          }
-
-          // Atualiza o estado local
-          setContent(rga.getText());
-
-          // Atualiza cursor
-          setTimeout(() => {
-            if (textareaRef.current) {
-              handleSelectionChange();
+        // Insere cada caractere individualmente
+        for (let i = 0; i < insertedCount; i++) {
+          const char = newContent[position + i];
+          if (char !== undefined) {
+            const operation = rga.insertAtPosition(char, position + i);
+            if (operation) {
+              operations.push(operation);
             }
-          }, 0);
+          }
         }
       }
-      // Detecta deleção
+      // Detecta deleção (pode ser múltiplos caracteres - seleção + delete)
       else if (newContent.length < oldContent.length) {
         const position = findDeletePosition(oldContent, newContent);
+        const deletedCount = oldContent.length - newContent.length;
 
-        // Remove no RGA local
-        const operation = rga.removeAtPosition(position);
+        // Remove cada caractere individualmente
+        for (let i = 0; i < deletedCount; i++) {
+          const operation = rga.removeAtPosition(position);
+          if (operation) {
+            operations.push(operation);
+          }
+        }
+      }
 
-        if (operation) {
-          // Envia a operação para o servidor
+      // Envia todas as operações em batch (se houver mais de uma)
+      if (operations.length > 0) {
+        if (operations.length === 1) {
+          // Operação única - usa o evento singular para compatibilidade
           socket.emit('operation', {
             documentId: currentDocument.documentId,
-            operation,
+            operation: operations[0],
+          });
+        } else {
+          // Múltiplas operações - envia em batch
+          socket.emit('operations', {
+            documentId: currentDocument.documentId,
+            operations,
           });
         }
 
-        // Atualiza o estado local
         setContent(rga.getText());
 
-        // Atualiza cursor
         setTimeout(() => {
           if (textareaRef.current) {
             handleSelectionChange();
@@ -224,6 +204,28 @@ const Editor = () => {
     }
   };
 
+  // Renderiza texto rico com tombstones para debug
+  const renderRichText = () => {
+    if (!rgaRef.current) return null;
+
+    // Usa getStructure e filtra o root
+    const nodes = rgaRef.current.getStructure().filter(n => !n.isRoot);
+
+    return (
+      <div className="rich-editor-view">
+        {nodes.map((node, index) => (
+          <span
+            key={`${node.id}-${index}`}
+            className={node.tombstone ? 'char-tombstone' : 'char-normal'}
+            title={`ID: ${node.id} | Origin: ${node.origin}`}
+          >
+            {node.value}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="editor-container">
       <header className="editor-header">
@@ -248,24 +250,49 @@ const Editor = () => {
         <UsersPanel collaborators={collaborators} currentUser={currentUser} />
 
         <div className="editor-main">
-          <div className="editor-wrapper">
-            <textarea
-              ref={textareaRef}
-              className="editor-textarea"
-              value={content}
-              onChange={handleTextChange}
-              onSelect={handleSelectionChange}
-              onClick={handleSelectionChange}
-              onKeyUp={handleSelectionChange}
-              placeholder="Comece a digitar..."
-              spellCheck="false"
-            />
-            <RemoteCursors
-              cursors={remoteCursors}
-              textareaRef={textareaRef}
-              collaborators={collaborators}
-            />
+          {/* Debug Toolbar */}
+          <div className="debug-toolbar">
+            <div className="debug-toggle">
+              <input
+                type="checkbox"
+                id="debug-mode"
+                checked={showDebug}
+                onChange={() => setShowDebug(!showDebug)}
+              />
+              <label htmlFor="debug-mode">
+                Mostrar Excluídos
+              </label>
+            </div>
           </div>
+
+          <div className="editor-wrapper">
+            {showDebug ? (
+              // Modo Debug: Renderização rica
+              renderRichText()
+            ) : (
+              // Modo Edição: Textarea normal
+              <>
+                <textarea
+                  ref={textareaRef}
+                  className="editor-textarea"
+                  value={content}
+                  onChange={handleTextChange}
+                  onSelect={handleSelectionChange}
+                  onClick={handleSelectionChange}
+                  onKeyUp={handleSelectionChange}
+                  placeholder="Comece a digitar..."
+                  spellCheck="false"
+                />
+                <RemoteCursors
+                  cursors={remoteCursors}
+                  textareaRef={textareaRef}
+                  collaborators={collaborators}
+                />
+              </>
+            )}
+          </div>
+
+
         </div>
 
         <MetricsPanel metrics={metrics} />
