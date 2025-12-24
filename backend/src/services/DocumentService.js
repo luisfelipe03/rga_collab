@@ -138,7 +138,7 @@ class DocumentService {
       );
     } else {
       // Already an RGA operation with vertexId
-      rga.applyOperation(operation);
+      rga.applyRemoteOperation(operation);
       rgaOperation = operation;
     }
 

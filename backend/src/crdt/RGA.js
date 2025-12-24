@@ -1,403 +1,300 @@
-import { randomUUID } from 'crypto';
-
 /**
  * RGA (Replicated Growable Array) CRDT Implementation
- * Used for collaborative text editing
+ * Versão simplificada e correta para edição colaborativa de texto
  */
 class RGA {
   constructor(replicaId) {
-    this.replicaId = replicaId; // Unique identifier for this replica
-    this.vertices = new Map(); // Map of vertex ID to vertex object
-    this.head = null; // Points to the first vertex
-    this.timestamp = 0; // Logical clock
-    this.delta = new Map(); // Delta state for Delta-CRDT
-    this.causalContext = new Set(); // Causal context for delta operations
-  }
+    this.id = replicaId;
+    this.counter = 0;
 
-  /**
-   * Insert a character at a specific position
-   */
-  insert(value, afterVertexId = null) {
-    this.timestamp++;
+    // Armazena TODOS os nós (id -> Node)
+    // Node: { id, value, next, origin, tombstone }
+    this.nodes = new Map();
 
-    const vertexId = `${this.replicaId}:${this.timestamp}`;
-    const vertex = {
-      id: vertexId,
-      value: value,
-      timestamp: this.timestamp,
-      replicaId: this.replicaId,
-      afterId: afterVertexId,
-      isTombstone: false,
+    // Nó raiz invisível (começo da lista)
+    this.nodes.set('root', {
+      id: 'root',
       next: null,
-    };
-
-    this.vertices.set(vertexId, vertex);
-
-    // Insert at head if no afterVertexId
-    if (!afterVertexId) {
-      if (this.head) {
-        vertex.next = this.head;
-      }
-      this.head = vertexId;
-    } else {
-      // Find the vertex to insert after
-      const afterVertex = this.vertices.get(afterVertexId);
-      if (afterVertex) {
-        vertex.next = afterVertex.next;
-        afterVertex.next = vertexId;
-      }
-    }
-
-    return {
-      type: 'insert',
-      vertexId,
-      value,
-      afterId: afterVertexId,
-      timestamp: this.timestamp,
-      replicaId: this.replicaId,
-    };
+      origin: null,
+      tombstone: true,
+    });
   }
 
-  /**
-   * Delete a character (tombstone approach)
-   */
-  delete(vertexId) {
-    const vertex = this.vertices.get(vertexId);
-    if (vertex && !vertex.isTombstone) {
-      vertex.isTombstone = true;
-      this.timestamp++;
-
-      return {
-        type: 'delete',
-        vertexId,
-        timestamp: this.timestamp,
-        replicaId: this.replicaId,
-      };
-    }
-    return null;
+  // Gera ID único: "contador@replica" (Ex: "1@alice")
+  _genId() {
+    this.counter++;
+    return `${this.counter}@${this.id}`;
   }
 
-  /**
-   * Apply remote operation
-   */
-  applyOperation(operation) {
-    if (operation.type === 'insert') {
-      // Check if vertex already exists
-      if (this.vertices.has(operation.vertexId)) {
-        return;
-      }
+  // Analisa IDs para desempate (Timestamp maior ganha, depois ID da réplica)
+  _isHigherPriority(idA, idB) {
+    const [timeA, userA] = idA.split('@');
+    const [timeB, userB] = idB.split('@');
+    if (parseInt(timeA) !== parseInt(timeB))
+      return parseInt(timeA) > parseInt(timeB);
+    return userA > userB;
+  }
 
-      const vertex = {
-        id: operation.vertexId,
-        value: operation.value,
-        timestamp: operation.timestamp,
-        replicaId: operation.replicaId,
-        afterId: operation.afterId,
-        isTombstone: false,
-        next: null,
-      };
+  // --- Operação 1: Inserção (Local e Remota) ---
+  add(value, parentId = 'root', forcedId = null) {
+    const newId = forcedId || this._genId();
 
-      this.vertices.set(operation.vertexId, vertex);
+    // Idempotência: se já existe, ignora
+    if (this.nodes.has(newId)) return;
 
-      // Insert in the correct position
-      if (!operation.afterId) {
-        if (this.head) {
-          vertex.next = this.head;
-        }
-        this.head = operation.vertexId;
-      } else {
-        const afterVertex = this.vertices.get(operation.afterId);
-        if (afterVertex) {
-          vertex.next = afterVertex.next;
-          afterVertex.next = operation.vertexId;
+    // 1. Cria o nó (mas não liga ainda)
+    const newNode = {
+      id: newId,
+      value: value,
+      origin: parentId, // Quem era o pai original na hora que foi criado
+      next: null,
+      tombstone: false,
+    };
+    this.nodes.set(newId, newNode);
+
+    // 2. Acha onde ligar (O algoritmo RGA real)
+    let currentId = parentId;
+    let childId = this.nodes.get(currentId).next;
+
+    // Percorre os "irmãos" que estão na frente
+    while (childId) {
+      const child = this.nodes.get(childId);
+
+      // Se o vizinho também é filho do mesmo pai (concorrente)...
+      if (child.origin === parentId) {
+        // ...e ele tem prioridade maior (foi criado depois ou tem ID maior)
+        if (this._isHigherPriority(child.id, newId)) {
+          // PULA ele. Nosso lugar é depois dele.
+          currentId = childId;
+          childId = child.next;
+          continue;
         }
       }
-    } else if (operation.type === 'delete') {
-      const vertex = this.vertices.get(operation.vertexId);
-      if (vertex) {
-        vertex.isTombstone = true;
-      }
+      // Se não for concorrente ou tiver prioridade menor, PARE. Achamos o lugar.
+      break;
     }
+
+    // 3. Liga os ponteiros (Sem rebuild!)
+    const prevNode = this.nodes.get(currentId);
+    newNode.next = prevNode.next;
+    prevNode.next = newId;
+
+    // Se for remoto, atualiza relógio para não gerar IDs repetidos no futuro
+    if (forcedId) {
+      const [time] = forcedId.split('@');
+      this.counter = Math.max(this.counter, parseInt(time));
+    }
+
+    return newNode; // Retorna para você enviar via rede
   }
 
-  /**
-   * Get the current text content
-   */
+  // --- Operação 2: Remoção (Apenas marcação) ---
+  remove(id) {
+    const node = this.nodes.get(id);
+    if (node) node.tombstone = true;
+    return { type: 'remove', id };
+  }
+
+  // --- Leitura: Transforma em Array ---
+  toArray() {
+    const result = [];
+    let curr = this.nodes.get('root').next;
+    while (curr) {
+      const node = this.nodes.get(curr);
+      if (!node.tombstone) {
+        result.push(node.value);
+      }
+      curr = node.next;
+    }
+    return result;
+  }
+
+  // --- Leitura: Transforma em String ---
   getText() {
-    const chars = [];
-    let currentId = this.head;
-
-    while (currentId) {
-      const vertex = this.vertices.get(currentId);
-      if (vertex && !vertex.isTombstone) {
-        chars.push(vertex.value);
-      }
-      currentId = vertex ? vertex.next : null;
-    }
-
-    return chars.join('');
+    return this.toArray().join('');
   }
 
-  /**
-   * Get vertex at position (for editing operations)
-   */
-  getVertexAtPosition(position) {
-    let currentPos = 0;
-    let currentId = this.head;
+  // --- Helper: Retorna array de nós visíveis (para UI que precisa do ID) ---
+  toArrayWithIds() {
+    const result = [];
+    let curr = this.nodes.get('root').next;
+    while (curr) {
+      const node = this.nodes.get(curr);
+      if (!node.tombstone) {
+        result.push({ id: node.id, value: node.value });
+      }
+      curr = node.next;
+    }
+    return result;
+  }
 
-    while (currentId) {
-      const vertex = this.vertices.get(currentId);
-      if (vertex && !vertex.isTombstone) {
+  // --- Helper: Encontra o ID do nó na posição especificada (0-indexed) ---
+  getNodeIdAtPosition(position) {
+    let currentPos = 0;
+    let curr = this.nodes.get('root').next;
+
+    while (curr) {
+      const node = this.nodes.get(curr);
+      if (!node.tombstone) {
         if (currentPos === position) {
-          return vertex.id;
+          return node.id;
         }
         currentPos++;
       }
-      currentId = vertex ? vertex.next : null;
+      curr = node.next;
     }
 
     return null;
   }
 
-  /**
-   * Get vertex ID before a position (for inserting after)
-   * Returns null if inserting at position 0 (head)
-   */
-  getVertexBeforePosition(position) {
+  // --- Helper: Encontra o ID do nó ANTES da posição (para inserção) ---
+  getNodeIdBeforePosition(position) {
     if (position === 0) {
-      return null;
+      return 'root';
     }
 
     let currentPos = 0;
-    let currentId = this.head;
-    let lastVisibleId = null;
+    let curr = this.nodes.get('root').next;
+    let lastVisibleId = 'root';
 
-    while (currentId) {
-      const vertex = this.vertices.get(currentId);
-      if (vertex && !vertex.isTombstone) {
+    while (curr) {
+      const node = this.nodes.get(curr);
+      if (!node.tombstone) {
         if (currentPos === position - 1) {
-          return vertex.id;
+          return node.id;
         }
-        lastVisibleId = vertex.id;
+        lastVisibleId = node.id;
         currentPos++;
       }
-      currentId = vertex ? vertex.next : null;
+      curr = node.next;
     }
 
-    // If position is at the end, return last visible vertex
+    // Se a posição é no final, retorna o último nó visível
     return lastVisibleId;
   }
 
-  /**
-   * Insert at a specific text position
-   */
-  insertAtPosition(value, position, replicaId) {
-    this.timestamp++;
+  // --- Inserção por posição (para integração com UI) ---
+  insertAtPosition(value, position) {
+    const parentId = this.getNodeIdBeforePosition(position);
+    const node = this.add(value, parentId);
 
-    const afterVertexId = this.getVertexBeforePosition(position);
-    const vertexId = `${replicaId}:${Date.now()}:${this.timestamp}`;
-
-    const vertex = {
-      id: vertexId,
-      value: value,
-      timestamp: this.timestamp,
-      replicaId: replicaId,
-      afterId: afterVertexId,
-      isTombstone: false,
-      next: null,
-    };
-
-    this.vertices.set(vertexId, vertex);
-
-    // Insert at head if no afterVertexId
-    if (!afterVertexId) {
-      if (this.head) {
-        vertex.next = this.head;
-      }
-      this.head = vertexId;
-    } else {
-      // Find the vertex to insert after
-      const afterVertex = this.vertices.get(afterVertexId);
-      if (afterVertex) {
-        vertex.next = afterVertex.next;
-        afterVertex.next = vertexId;
-      }
-    }
-
-    return {
-      type: 'insert',
-      vertexId,
-      value,
-      afterId: afterVertexId,
-      position,
-      timestamp: this.timestamp,
-      replicaId: replicaId,
-    };
-  }
-
-  /**
-   * Delete at a specific text position
-   */
-  deleteAtPosition(position, replicaId) {
-    const vertexId = this.getVertexAtPosition(position);
-
-    if (!vertexId) {
-      return null;
-    }
-
-    const vertex = this.vertices.get(vertexId);
-    if (vertex && !vertex.isTombstone) {
-      vertex.isTombstone = true;
-      this.timestamp++;
-
+    if (node) {
       return {
-        type: 'delete',
-        vertexId,
-        position,
-        timestamp: this.timestamp,
-        replicaId: replicaId,
+        type: 'insert',
+        id: node.id,
+        value: node.value,
+        origin: node.origin,
       };
     }
     return null;
   }
 
-  /**
-   * Get the state for synchronization
-   */
+  // --- Remoção por posição (para integração com UI) ---
+  removeAtPosition(position) {
+    const nodeId = this.getNodeIdAtPosition(position);
+
+    if (nodeId) {
+      return this.remove(nodeId);
+    }
+    return null;
+  }
+
+  // ===========================================================================
+  // MÉTODOS DE SINCRONIZAÇÃO ENTRE RÉPLICAS
+  // ===========================================================================
+  //
+  // Estes métodos são usados para comunicação entre diferentes instâncias do RGA:
+  //
+  // - applyRemoteOperation(): Aplica uma operação individual recebida de outra
+  //                           réplica via Socket.io (insert/remove). É o método
+  //                           principal para sincronização em tempo real.
+  //
+  // - getState():       Serializa o estado completo do RGA para persistência
+  //                     (MongoDB) ou para enviar a um novo cliente que acabou
+  //                     de se conectar (sync inicial).
+  //
+  // - loadState():      Restaura o estado completo do RGA a partir de dados
+  //                     serializados. Usado na inicialização do servidor para
+  //                     carregar documentos do banco de dados.
+  //
+  // - mergeRemoteState(): Faz merge de dois estados de réplicas diferentes.
+  //                       Útil quando duas réplicas ficaram desconectadas e
+  //                       precisam sincronizar todos os dados acumulados.
+  //
+  // ===========================================================================
+
+  // --- Aplicar operação remota ---
+  applyRemoteOperation(operation) {
+    if (operation.type === 'insert') {
+      // A função add já é idempotente e usa o algoritmo RGA correto
+      this.add(operation.value, operation.origin, operation.id);
+    } else if (operation.type === 'remove') {
+      this.remove(operation.id);
+    }
+  }
+
+  // --- Estado para sincronização ---
   getState() {
     return {
-      replicaId: this.replicaId,
-      vertices: Array.from(this.vertices.values()),
-      head: this.head,
-      timestamp: this.timestamp,
+      replicaId: this.id,
+      counter: this.counter,
+      nodes: Array.from(this.nodes.entries()).map(([id, node]) => ({
+        id: node.id,
+        value: node.value,
+        origin: node.origin,
+        next: node.next,
+        tombstone: node.tombstone,
+      })),
     };
   }
 
-  /**
-   * Load state from database (complete state restoration)
-   */
+  // --- Carregar estado de outro replica/banco de dados ---
   loadState(state) {
-    // Clear current state
-    this.vertices.clear();
-    this.head = state.head;
-    this.timestamp = state.timestamp || 0;
+    this.nodes.clear();
 
-    // Restore all vertices
-    if (state.vertices && Array.isArray(state.vertices)) {
-      state.vertices.forEach((vertex) => {
-        this.vertices.set(vertex.id, { ...vertex });
+    // Restaura todos os nós
+    if (state.nodes && Array.isArray(state.nodes)) {
+      state.nodes.forEach((node) => {
+        this.nodes.set(node.id, { ...node });
       });
     }
+
+    // Atualiza o contador para evitar conflitos de ID
+    this.counter = state.counter || 0;
   }
 
-  /**
-   * Merge state from another replica
-   */
-  mergeState(state) {
-    state.vertices.forEach((vertex) => {
-      if (!this.vertices.has(vertex.id)) {
-        this.vertices.set(vertex.id, { ...vertex });
+  // --- Merge de estado de outra réplica (para sincronização) ---
+  mergeRemoteState(state) {
+    if (!state.nodes) return;
+
+    // Para cada nó do estado remoto
+    state.nodes.forEach((remoteNode) => {
+      // Ignora o nó root, ele já existe
+      if (remoteNode.id === 'root') return;
+
+      // Se não temos esse nó, aplicamos como operação de insert
+      if (!this.nodes.has(remoteNode.id)) {
+        this.add(remoteNode.value, remoteNode.origin, remoteNode.id);
       }
-    });
 
-    // Rebuild the linked list structure
-    this.rebuildStructure();
-
-    // Update timestamp
-    this.timestamp = Math.max(this.timestamp, state.timestamp);
-  }
-
-  /**
-   * Rebuild the linked list structure after merging
-   */
-  rebuildStructure() {
-    // Clear next pointers
-    this.vertices.forEach((vertex) => {
-      vertex.next = null;
-    });
-
-    // Sort vertices by timestamp and replicaId for deterministic ordering
-    const sortedVertices = Array.from(this.vertices.values()).sort((a, b) => {
-      if (a.timestamp !== b.timestamp) {
-        return a.timestamp - b.timestamp;
-      }
-      return a.replicaId.localeCompare(b.replicaId);
-    });
-
-    // Rebuild based on afterId relationships
-    sortedVertices.forEach((vertex) => {
-      if (!vertex.afterId) {
-        if (this.head) {
-          vertex.next = this.head;
-        }
-        this.head = vertex.id;
-      } else {
-        const afterVertex = this.vertices.get(vertex.afterId);
-        if (afterVertex) {
-          vertex.next = afterVertex.next;
-          afterVertex.next = vertex.id;
+      // Se o nó remoto está como tombstone, marcamos o local também
+      if (remoteNode.tombstone) {
+        const localNode = this.nodes.get(remoteNode.id);
+        if (localNode) {
+          localNode.tombstone = true;
         }
       }
     });
+
+    // Atualiza o contador para o maior valor
+    this.counter = Math.max(this.counter, state.counter || 0);
   }
 
-  /**
-   * Delta-CRDT: Get delta state (only new changes since last sync)
-   */
-  getDelta() {
-    const deltaVertices = Array.from(this.delta.values());
-    const deltaState = {
-      replicaId: this.replicaId,
-      vertices: deltaVertices,
-      timestamp: this.timestamp,
-      causalContext: Array.from(this.causalContext),
-    };
-
-    // Clear delta after getting it
-    this.delta.clear();
-
-    return deltaState;
-  }
-
-  /**
-   * Delta-CRDT: Apply delta state from another replica
-   */
-  applyDelta(delta) {
-    if (!delta || !delta.vertices) return;
-
-    delta.vertices.forEach((vertex) => {
-      if (!this.vertices.has(vertex.id)) {
-        this.vertices.set(vertex.id, { ...vertex });
-
-        // Update causal context
-        this.causalContext.add(vertex.id);
-      }
-    });
-
-    // Rebuild structure if needed
-    if (delta.vertices.length > 0) {
-      this.rebuildStructure();
-    }
-
-    // Update timestamp
-    this.timestamp = Math.max(this.timestamp, delta.timestamp || 0);
-  }
-
-  /**
-   * Add operation to delta for Delta-CRDT propagation
-   */
-  addToDelta(vertex) {
-    this.delta.set(vertex.id, vertex);
-    this.causalContext.add(vertex.id);
-  }
-
-  /**
-   * Get metrics about the RGA structure
-   */
+  // --- Métricas para debug ---
   getMetrics() {
-    const totalNodes = this.vertices.size;
-    const activeNodes = Array.from(this.vertices.values()).filter(
-      (v) => !v.isTombstone
+    const totalNodes = this.nodes.size - 1; // -1 para não contar o root
+    const activeNodes = Array.from(this.nodes.values()).filter(
+      (n) => !n.tombstone && n.id !== 'root'
     ).length;
     const tombstoneNodes = totalNodes - activeNodes;
     const textLength = this.getText().length;
