@@ -49,8 +49,25 @@ const Editor = () => {
       const rga = rgaRef.current;
       if (!rga) return;
 
+      // Salva posição do cursor baseada no ID do nó anterior para manter consistência
+      const textarea = textareaRef.current;
+      const cursorStart = textarea ? textarea.selectionStart : null;
+      const cursorEnd = textarea ? textarea.selectionEnd : null;
+      
+      const idBeforeStart = cursorStart !== null ? rga.getNodeIdBeforePosition(cursorStart) : null;
+      const idBeforeEnd = cursorEnd !== null ? rga.getNodeIdBeforePosition(cursorEnd) : null;
+
       rga.applyRemoteOperation(operation);
       setContent(rga.getText());
+
+      // Restaura posição do cursor após o render do React
+      if (textarea && idBeforeStart !== null && idBeforeEnd !== null) {
+        setTimeout(() => {
+          const newStart = rga.getPositionOfNodeId(idBeforeStart);
+          const newEnd = rga.getPositionOfNodeId(idBeforeEnd);
+          textarea.setSelectionRange(newStart, newEnd);
+        }, 0);
+      }
     };
 
     // Handler para batch de operações
@@ -58,8 +75,25 @@ const Editor = () => {
       const rga = rgaRef.current;
       if (!rga || !Array.isArray(operations)) return;
 
+      // Salva posição do cursor baseada no ID do nó anterior
+      const textarea = textareaRef.current;
+      const cursorStart = textarea ? textarea.selectionStart : null;
+      const cursorEnd = textarea ? textarea.selectionEnd : null;
+      
+      const idBeforeStart = cursorStart !== null ? rga.getNodeIdBeforePosition(cursorStart) : null;
+      const idBeforeEnd = cursorEnd !== null ? rga.getNodeIdBeforePosition(cursorEnd) : null;
+
       rga.applyRemoteOperations(operations);  // Usa o novo método
       setContent(rga.getText());
+
+      // Restaura posição do cursor após o render do React
+      if (textarea && idBeforeStart !== null && idBeforeEnd !== null) {
+        setTimeout(() => {
+          const newStart = rga.getPositionOfNodeId(idBeforeStart);
+          const newEnd = rga.getPositionOfNodeId(idBeforeEnd);
+          textarea.setSelectionRange(newStart, newEnd);
+        }, 0);
+      }
     };
 
     const handleCursorMove = ({ userId, username, position }) => {
@@ -100,6 +134,16 @@ const Editor = () => {
     });
   }, [collaborators]);
 
+  const handleSelectionChange = useCallback(() => {
+    if (!textareaRef.current || !socket || !currentDocument) return;
+
+    const position = textareaRef.current.selectionStart;
+    socket.emit('cursor-update', {
+      documentId: currentDocument.documentId,
+      position,
+    });
+  }, [socket, currentDocument]);
+
   const handleTextChange = useCallback(
     (e) => {
       const rga = rgaRef.current;
@@ -110,35 +154,46 @@ const Editor = () => {
 
       if (newContent === oldContent) return;
 
-      const operations = [];  // Coleta operações para batch
+      // Algoritmo de diff simples para detectar mudanças (prefixo/sufixo comum)
+      let start = 0;
+      while (
+        start < oldContent.length &&
+        start < newContent.length &&
+        oldContent[start] === newContent[start]
+      ) {
+        start++;
+      }
 
-      // Detecta inserção (pode ser múltiplos caracteres - paste)
-      if (newContent.length > oldContent.length) {
-        const position = findInsertPosition(oldContent, newContent);
-        const insertedCount = newContent.length - oldContent.length;
+      let endOld = oldContent.length - 1;
+      let endNew = newContent.length - 1;
+      while (
+        endOld >= start &&
+        endNew >= start &&
+        oldContent[endOld] === newContent[endNew]
+      ) {
+        endOld--;
+        endNew--;
+      }
 
-        // Insere cada caractere individualmente
-        for (let i = 0; i < insertedCount; i++) {
-          const char = newContent[position + i];
-          if (char !== undefined) {
-            const operation = rga.insertAtPosition(char, position + i);
-            if (operation) {
-              operations.push(operation);
-            }
-          }
+      const deletedCount = endOld - start + 1;
+      const insertedText = newContent.substring(start, endNew + 1);
+
+      const operations = [];
+
+      // 1. Processa Deleções
+      for (let i = 0; i < deletedCount; i++) {
+        const operation = rga.removeAtPosition(start);
+        if (operation) {
+          operations.push(operation);
         }
       }
-      // Detecta deleção (pode ser múltiplos caracteres - seleção + delete)
-      else if (newContent.length < oldContent.length) {
-        const position = findDeletePosition(oldContent, newContent);
-        const deletedCount = oldContent.length - newContent.length;
 
-        // Remove cada caractere individualmente
-        for (let i = 0; i < deletedCount; i++) {
-          const operation = rga.removeAtPosition(position);
-          if (operation) {
-            operations.push(operation);
-          }
+      // 2. Processa Inserções
+      for (let i = 0; i < insertedText.length; i++) {
+        const char = insertedText[i];
+        const operation = rga.insertAtPosition(char, start + i);
+        if (operation) {
+          operations.push(operation);
         }
       }
 
@@ -167,36 +222,8 @@ const Editor = () => {
         }, 0);
       }
     },
-    [content, socket, currentDocument]
+    [content, socket, currentDocument, handleSelectionChange]
   );
-
-  const handleSelectionChange = useCallback(() => {
-    if (!textareaRef.current || !socket || !currentDocument) return;
-
-    const position = textareaRef.current.selectionStart;
-    socket.emit('cursor-update', {
-      documentId: currentDocument.documentId,
-      position,
-    });
-  }, [socket, currentDocument]);
-
-  const findInsertPosition = (oldStr, newStr) => {
-    for (let i = 0; i < newStr.length; i++) {
-      if (i >= oldStr.length || oldStr[i] !== newStr[i]) {
-        return i;
-      }
-    }
-    return newStr.length - 1;
-  };
-
-  const findDeletePosition = (oldStr, newStr) => {
-    for (let i = 0; i < oldStr.length; i++) {
-      if (i >= newStr.length || oldStr[i] !== newStr[i]) {
-        return i;
-      }
-    }
-    return oldStr.length - 1;
-  };
 
   const handleCopyDocumentId = () => {
     if (currentDocument) {

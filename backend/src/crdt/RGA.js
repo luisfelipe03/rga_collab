@@ -21,6 +21,10 @@ class RGA {
 
     // Buffer para rastrear nós adicionados desde último getDelta (para métricas)
     this.deltaBuffer = [];
+
+    // Buffer para operações órfãs (aguardando pai ou alvo existir)
+    // Map<dependencyId, Array<Operation>>
+    this.pendingOperations = new Map();
   }
 
   // Gera ID único: "contador@replica" (Ex: "1@alice")
@@ -39,11 +43,17 @@ class RGA {
   }
 
   // --- Operação 1: Inserção (Local e Remota) ---
+  // retorna o nó adicionado ou null se pai não existir
   add(value, parentId = 'root', forcedId = null) {
     const newId = forcedId || this._genId();
 
-    // Idempotência: se já existe, ignora
-    if (this.nodes.has(newId)) return;
+    // Idempotência: se já existe, retorna o nó existente
+    if (this.nodes.has(newId)) return this.nodes.get(newId);
+
+    // Segurança: se o pai não existe, falha (será bufferizado pelo chamador)
+    if (!this.nodes.has(parentId)) {
+      return null;
+    }
 
     // 1. Cria o nó (mas não liga ainda)
     const newNode = {
@@ -95,7 +105,7 @@ class RGA {
       origin: newNode.origin,
     });
 
-    return newNode; // Retorna para você enviar via rede
+    return newNode;
   }
 
   // --- Operação 2: Remoção (Apenas marcação) ---
@@ -204,6 +214,28 @@ class RGA {
     return lastVisibleId;
   }
 
+  // --- Helper: Encontra a posição (index) de um nó pelo ID ---
+  getPositionOfNodeId(id) {
+    if (id === 'root') return 0;
+
+    let currentPos = 0;
+    let curr = this.nodes.get('root').next;
+
+    while (curr) {
+      const node = this.nodes.get(curr);
+      if (!node) break; // Segurança contra IDs inválidos
+
+      if (curr === id) {
+        return node.tombstone ? currentPos : currentPos + 1;
+      }
+      if (!node.tombstone) {
+        currentPos++;
+      }
+      curr = node.next;
+    }
+    return currentPos;
+  }
+
   // --- Inserção por posição (para integração com UI) ---
   insertAtPosition(value, position) {
     const parentId = this.getNodeIdBeforePosition(position);
@@ -230,6 +262,34 @@ class RGA {
     return null;
   }
 
+  // --- Helpers de Buffer de Pendências ---
+
+  _addToPending(dependencyId, operation) {
+    if (!this.pendingOperations.has(dependencyId)) {
+      this.pendingOperations.set(dependencyId, []);
+    }
+    this.pendingOperations.get(dependencyId).push(operation);
+  }
+
+  _processPendingOperations(nodeId) {
+    const pending = this.pendingOperations.get(nodeId);
+    if (!pending) return;
+
+    this.pendingOperations.delete(nodeId); // Remove do buffer antes de processar para evitar loops
+
+    // Ordena por timestamp para tentar manter ordem original se possível,
+    // embora o RGA já lide com concorrência.
+    pending.sort((a, b) => {
+      // Se ambos forem insert e tiverem id (timestamp), ordena.
+      if (a.id && b.id) return this._isHigherPriority(a.id, b.id) ? 1 : -1;
+      return 0;
+    });
+
+    pending.forEach(op => {
+      this.applyRemoteOperation(op);
+    });
+  }
+
   // ===========================================================================
   // MÉTODOS DE SINCRONIZAÇÃO ENTRE RÉPLICAS
   // ===========================================================================
@@ -254,13 +314,27 @@ class RGA {
   //
   // ===========================================================================
 
-  // --- Aplicar operação remota (singular) ---
+  // --- Aplicar operação remota (singular, com buffer) ---
   applyRemoteOperation(operation) {
     if (operation.type === 'insert') {
-      // A função add já é idempotente e usa o algoritmo RGA correto
-      this.add(operation.value, operation.origin, operation.id);
+      // Tenta adicionar (falha se pai não existir)
+      const addedNode = this.add(operation.value, operation.origin, operation.id);
+
+      if (addedNode) {
+        // Sucesso! Verifica se este novo nó desbloqueia operações pendentes
+        this._processPendingOperations(addedNode.id);
+      } else {
+        // Falha! Pai (origin) não existe ainda. Bufferiza esperando pelo origin.
+        // console.log(`RGA: Buffering insert of ${operation.id} waiting for ${operation.origin}`);
+        this._addToPending(operation.origin, operation);
+      }
     } else if (operation.type === 'remove') {
-      this.remove(operation.id);
+      if (this.nodes.has(operation.id)) {
+        this.remove(operation.id);
+      } else {
+        // Falha! Nó a ser removido não existe. Bufferiza esperando pelo id.
+        this._addToPending(operation.id, operation);
+      }
     }
   }
 
