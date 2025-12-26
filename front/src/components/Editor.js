@@ -5,6 +5,7 @@ import RGA from '../crdt/RGA.js';
 import UsersPanel from './UsersPanel';
 import MetricsPanel from './MetricsPanel';
 import RemoteCursors from './RemoteCursors';
+import ChartsPanel from './ChartsPanel';
 import '../styles/Editor.css';
 
 const Editor = () => {
@@ -21,6 +22,8 @@ const Editor = () => {
   const [content, setContent] = useState('');
   const [remoteCursors, setRemoteCursors] = useState({});
   const [showDebug, setShowDebug] = useState(false); // Estado para toggle de debug
+  const [metricsHistory, setMetricsHistory] = useState([]);
+  const [showCharts, setShowCharts] = useState(false); // Toggle para ver gráficos
 
   // Inicializa o RGA quando o documento é carregado
   useEffect(() => {
@@ -103,14 +106,29 @@ const Editor = () => {
       }));
     };
 
+    const handleMetricsUpdate = (newMetrics) => {
+      setMetricsHistory((prev) => {
+        const now = Date.now();
+        // Mantém apenas os últimos 120 pontos de dados (aprox. 2-4 minutos)
+        // para não pesar a memória do navegador
+        const newHistory = [...prev, { ...newMetrics, timestamp: now }];
+        if (newHistory.length > 120) {
+          return newHistory.slice(newHistory.length - 120);
+        }
+        return newHistory;
+      });
+    };
+
     socket.on('operation', handleOperation);
     socket.on('operations', handleOperations);  // Novo: batch
     socket.on('cursor-move', handleCursorMove);
+    socket.on('metrics-update', handleMetricsUpdate);
 
     return () => {
       socket.off('operation', handleOperation);
       socket.off('operations', handleOperations);  // Novo: batch
       socket.off('cursor-move', handleCursorMove);
+      socket.off('metrics-update', handleMetricsUpdate);
     };
   }, [socket, currentDocument]);
 
@@ -260,6 +278,13 @@ const Editor = () => {
           <button onClick={leaveDocument} className="btn-back">
             ← Voltar
           </button>
+          <button
+            className={`btn-secondary ${showCharts ? 'active' : ''}`}
+            style={{ marginLeft: '10px' }}
+            onClick={() => setShowCharts(!showCharts)}
+          >
+            📊 Gráficos
+          </button>
           <div className="document-info">
             <h2>{currentDocument?.title || 'Documento'}</h2>
             <span
@@ -272,9 +297,16 @@ const Editor = () => {
           </div>
         </div>
 
-        <div className={`connection-status ${connected ? 'is-connected' : 'is-disconnected'}`}>
-          <span className="status-dot"></span>
-          <span className="status-text">{connected ? 'Online' : 'Conectando...'}</span>
+        <div className="header-right">
+          <div className="active-users-badge" title="Usuários ativos no documento">
+            <span className="users-icon">👥</span>
+            <span className="users-count">{collaborators?.length || 0}</span>
+          </div>
+
+          <div className={`connection-status ${connected ? 'is-connected' : 'is-disconnected'}`}>
+            <span className="status-dot"></span>
+            <span className="status-text">{connected ? 'Online' : 'Conectando...'}</span>
+          </div>
         </div>
       </header>
 
@@ -282,49 +314,53 @@ const Editor = () => {
         <UsersPanel collaborators={collaborators} currentUser={currentUser} />
 
         <div className="editor-main">
-          {/* Debug Toolbar */}
-          <div className="debug-toolbar">
-            <div className="debug-toggle">
-              <input
-                type="checkbox"
-                id="debug-mode"
-                checked={showDebug}
-                onChange={() => setShowDebug(!showDebug)}
-              />
-              <label htmlFor="debug-mode">
-                Mostrar Excluídos
-              </label>
-            </div>
-          </div>
+          {showCharts ? (
+            <ChartsPanel data={metricsHistory} />
+          ) : (
+            <>
+              {/* Debug Toolbar */}
+              <div className="debug-toolbar">
+                <div className="debug-toggle">
+                  <input
+                    type="checkbox"
+                    id="debug-mode"
+                    checked={showDebug}
+                    onChange={() => setShowDebug(!showDebug)}
+                  />
+                  <label htmlFor="debug-mode">
+                    Mostrar Excluídos
+                  </label>
+                </div>
+              </div>
 
-          <div className="editor-wrapper">
-            {showDebug ? (
-              // Modo Debug: Renderização rica
-              renderRichText()
-            ) : (
-              // Modo Edição: Textarea normal
-              <>
-                <textarea
-                  ref={textareaRef}
-                  className="editor-textarea"
-                  value={content}
-                  onChange={handleTextChange}
-                  onSelect={handleSelectionChange}
-                  onClick={handleSelectionChange}
-                  onKeyUp={handleSelectionChange}
-                  placeholder="Comece a digitar..."
-                  spellCheck="false"
-                />
-                <RemoteCursors
-                  cursors={remoteCursors}
-                  textareaRef={textareaRef}
-                  collaborators={collaborators}
-                />
-              </>
-            )}
-          </div>
-
-
+              <div className="editor-wrapper">
+                {showDebug ? (
+                  // Modo Debug: Renderização rica
+                  renderRichText()
+                ) : (
+                  // Modo Edição: Textarea normal
+                  <>
+                    <textarea
+                      ref={textareaRef}
+                      className="editor-textarea"
+                      value={content}
+                      onChange={handleTextChange}
+                      onSelect={handleSelectionChange}
+                      onClick={handleSelectionChange}
+                      onKeyUp={handleSelectionChange}
+                      placeholder="Comece a digitar..."
+                      spellCheck="false"
+                    />
+                    <RemoteCursors
+                      cursors={remoteCursors}
+                      textareaRef={textareaRef}
+                      collaborators={collaborators}
+                    />
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <MetricsPanel metrics={metrics} />

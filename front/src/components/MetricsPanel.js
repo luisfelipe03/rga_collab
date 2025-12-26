@@ -1,6 +1,15 @@
 import React from 'react';
 import '../styles/MetricsPanel.css';
 
+// Formatador inteligente para taxas de rede
+const formatNetworkRate = (value) => {
+  if (value === undefined || value === null) return '0.000';
+  const num = Number(value);
+  if (num > 100) return num.toFixed(1);  // > 100 Mbps: 1 casa (ex: 281.5)
+  if (num > 1) return num.toFixed(2);    // > 1 Mbps: 2 casas (ex: 5.42)
+  return num.toFixed(4);                  // < 1 Mbps: 4 casas (ex: 0.0045)
+};
+
 const MetricsPanel = ({ metrics }) => {
   if (!metrics) {
     return (
@@ -79,13 +88,13 @@ const MetricsPanel = ({ metrics }) => {
           <div className="metric-row">
             <span className="metric-label">Taxa RX:</span>
             <span className="metric-value">
-              {metrics.networkStats.rx_rate_mbps} Mbps
+              {formatNetworkRate(metrics.networkStats.rx_rate_mbps)} Mbps
             </span>
           </div>
           <div className="metric-row">
             <span className="metric-label">Taxa TX:</span>
             <span className="metric-value">
-              {metrics.networkStats.tx_rate_mbps} Mbps
+              {formatNetworkRate(metrics.networkStats.tx_rate_mbps)} Mbps
             </span>
           </div>
         </div>

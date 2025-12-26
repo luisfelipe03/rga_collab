@@ -82,7 +82,7 @@ class MetricsService {
     const avgLatency =
       metrics.latencies.length > 0
         ? metrics.latencies.reduce((a, b) => a + b, 0) /
-          metrics.latencies.length
+        metrics.latencies.length
         : 0;
 
     const totalDeltaSize = metrics.deltaStates.reduce(
@@ -161,14 +161,8 @@ class MetricsService {
       tx_bytes: this.networkStats.tx_bytes,
       rx_rate: this.networkStats.rx_rate || 0,
       tx_rate: this.networkStats.tx_rate || 0,
-      rx_rate_mbps: (
-        ((this.networkStats.rx_rate || 0) * 8) /
-        1_000_000
-      ).toFixed(2),
-      tx_rate_mbps: (
-        ((this.networkStats.tx_rate || 0) * 8) /
-        1_000_000
-      ).toFixed(2),
+      rx_rate_mbps: ((this.networkStats.rx_rate || 0) * 8) / 1_000_000,
+      tx_rate_mbps: ((this.networkStats.tx_rate || 0) * 8) / 1_000_000,
     };
   }
 

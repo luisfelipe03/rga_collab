@@ -47,6 +47,38 @@ app.get('/api/metrics/:documentId', (req, res) => {
 // Store connected users and their current documents
 const users = new Map();
 const documentRooms = new Map(); // documentId -> Set of socket IDs
+const roomUpdateTimers = new Map(); // documentId -> debounce timer (para evitar "tempestade de broadcasts")
+
+// Função para agendar atualização de sala com debounce
+const scheduleRoomUpdate = (documentId) => {
+  // Cancela timer anterior se existir
+  if (roomUpdateTimers.has(documentId)) {
+    clearTimeout(roomUpdateTimers.get(documentId));
+  }
+
+  // Agenda nova atualização para daqui a 100ms
+  const timer = setTimeout(() => {
+    const room = documentRooms.get(documentId);
+    const roomUsers = [];
+
+    if (room) {
+      for (const socketId of room) {
+        const roomUser = users.get(socketId);
+        if (roomUser) {
+          roomUsers.push({
+            userId: roomUser.id,
+            username: roomUser.username,
+          });
+        }
+      }
+    }
+
+    io.to(documentId).emit('room-users', roomUsers);
+    roomUpdateTimers.delete(documentId);
+  }, 100);
+
+  roomUpdateTimers.set(documentId, timer);
+};
 
 io.on('connection', (socket) => {
   // Handle user registration
@@ -62,7 +94,6 @@ io.on('connection', (socket) => {
     users.set(socket.id, user);
 
     socket.emit('registered', user);
-    io.emit('users', Array.from(users.values()));
   });
 
   // Create new document
@@ -360,37 +391,33 @@ io.on('connection', (socket) => {
     if (user) {
       // Leave document room
       if (user.currentDocument) {
-        const room = documentRooms.get(user.currentDocument);
+        const docId = user.currentDocument;
+        const room = documentRooms.get(docId);
         if (room) {
           room.delete(socket.id);
         }
 
-        // Get updated list of users in the room
-        const roomUsers = [];
-        if (room) {
-          for (const socketId of room) {
-            const roomUser = users.get(socketId);
-            if (roomUser) {
-              roomUsers.push({
-                userId: roomUser.id,
-                username: roomUser.username,
-              });
-            }
-          }
-        }
-
-        // Send updated user list to remaining users
-        io.to(user.currentDocument).emit('room-users', roomUsers);
-
-        // Notify all clients to update active collaborators count
-        io.emit('collaborators-changed');
+        // Agenda atualização com debounce (evita tempestade de broadcasts)
+        scheduleRoomUpdate(docId);
       }
 
       // Remove user from users map
       users.delete(socket.id);
-      io.emit('users', Array.from(users.values()));
     }
   });
 });
+
+// Periodic metrics broadcast (Heartbeat) - every 2 seconds
+setInterval(() => {
+  for (const documentId of documentRooms.keys()) {
+    const clientsCount = documentRooms.get(documentId)?.size || 0;
+    if (clientsCount > 0) {
+      const metrics = DocumentService.getDocumentMetrics(documentId);
+      if (metrics) {
+        io.to(documentId).emit('metrics-update', metrics);
+      }
+    }
+  }
+}, 2000);
 
 httpServer.listen(PORT);
