@@ -15,7 +15,7 @@ const Editor = () => {
     metrics,
     leaveDocument,
   } = useApp();
-  const { socket } = useSocket();
+  const { socket, connected } = useSocket();
   const textareaRef = useRef(null);
   const rgaRef = useRef(null);
   const [content, setContent] = useState('');
@@ -53,7 +53,7 @@ const Editor = () => {
       const textarea = textareaRef.current;
       const cursorStart = textarea ? textarea.selectionStart : null;
       const cursorEnd = textarea ? textarea.selectionEnd : null;
-      
+
       const idBeforeStart = cursorStart !== null ? rga.getNodeIdBeforePosition(cursorStart) : null;
       const idBeforeEnd = cursorEnd !== null ? rga.getNodeIdBeforePosition(cursorEnd) : null;
 
@@ -79,7 +79,7 @@ const Editor = () => {
       const textarea = textareaRef.current;
       const cursorStart = textarea ? textarea.selectionStart : null;
       const cursorEnd = textarea ? textarea.selectionEnd : null;
-      
+
       const idBeforeStart = cursorStart !== null ? rga.getNodeIdBeforePosition(cursorStart) : null;
       const idBeforeEnd = cursorEnd !== null ? rga.getNodeIdBeforePosition(cursorEnd) : null;
 
@@ -270,6 +270,11 @@ const Editor = () => {
               ID: {currentDocument?.documentId?.slice(0, 8)}...
             </span>
           </div>
+        </div>
+
+        <div className={`connection-status ${connected ? 'is-connected' : 'is-disconnected'}`}>
+          <span className="status-dot"></span>
+          <span className="status-text">{connected ? 'Online' : 'Conectando...'}</span>
         </div>
       </header>
 

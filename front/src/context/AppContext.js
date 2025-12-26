@@ -26,11 +26,44 @@ export const AppProvider = ({ children }) => {
   const [metrics, setMetrics] = useState(null);
   const [editorContent, setEditorContent] = useState('');
 
+  // Refs para acesso dentro dos callbacks do socket
+  const currentUserRef = React.useRef(currentUser);
+  const currentDocumentRef = React.useRef(currentDocument);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  useEffect(() => {
+    currentDocumentRef.current = currentDocument;
+  }, [currentDocument]);
+
   useEffect(() => {
     if (!socket) return;
 
+    // Handler de conexão/reconexão
+    const handleConnect = () => {
+      if (currentUserRef.current) {
+        console.log('Socket reconnected, restoring session...');
+        socket.emit('register', currentUserRef.current.username);
+      }
+    };
+
+    socket.on('connect', handleConnect);
+
     socket.on('registered', (user) => {
+      console.log('User registered:', user);
       setCurrentUser(user);
+
+      // Se havia um documento ativo, tenta reentrar nele
+      if (currentDocumentRef.current) {
+        console.log('Rejoining document:', currentDocumentRef.current.documentId);
+        socket.emit('join-document', {
+          documentId: currentDocumentRef.current.documentId,
+          userId: user.id,
+          username: user.username,
+        });
+      }
     });
 
     socket.on('documents-list', (docs) => {
@@ -83,10 +116,17 @@ export const AppProvider = ({ children }) => {
 
     socket.on('error', ({ message }) => {
       console.error('Socket error:', message);
-      alert(`Erro: ${message}`);
+      // Ignora erro de "User not registered" se estivermos em processo de reconexão?
+      // Por enquanto, mostra todos os erros, mas o usuário não deve ver esse se a reconexão funcionar rápido.
+      if (message !== 'User not registered') {
+        alert(`Erro: ${message}`);
+      } else {
+        console.warn('Suppressing expected "User not registered" error during reconnection');
+      }
     });
 
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('registered');
       socket.off('documents-list');
       socket.off('document-created');
